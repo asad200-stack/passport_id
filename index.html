@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light" />
+    <title>AI Passport & ID Photo</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar__inner">
+        <div class="brand">
+          <div class="brand__title">AI Passport &amp; ID Photo</div>
+          <div class="brand__subtitle">Fast, studio-ready, browser-only passport photo generator</div>
+        </div>
+        <div class="topbar__status" id="statusPill" aria-live="polite">Ready</div>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="panel">
+        <div class="panel__head">
+          <h2>1) Camera</h2>
+          <p>Align the face inside the guide. Capture is blocked until a face is detected and correctly sized.</p>
+        </div>
+
+        <div class="cameraGrid">
+          <div class="cameraBox">
+            <video id="video" class="cameraVideo" autoplay playsinline muted></video>
+            <div class="overlay" aria-hidden="true">
+              <div class="overlay__frame">
+                <div class="overlay__centerDot"></div>
+                <div class="overlay__eyeLine"></div>
+                <div class="overlay__headGuide"></div>
+              </div>
+            </div>
+            <div class="hint" id="cameraHint">Start camera to begin.</div>
+          </div>
+
+          <div class="controls">
+            <div class="controlRow">
+              <label class="label" for="cameraSelect">Camera</label>
+              <select id="cameraSelect" class="select"></select>
+            </div>
+
+            <div class="controlRow">
+              <button id="btnStart" class="btn btn--primary">Start Camera</button>
+              <button id="btnStop" class="btn btn--ghost" disabled>Stop</button>
+            </div>
+
+            <div class="controlRow">
+              <button id="btnCapture" class="btn btn--accent" disabled>Take Photo</button>
+              <button id="btnRetake" class="btn btn--ghost" disabled>Retake</button>
+            </div>
+
+            <div class="msgBox" role="status" aria-live="polite">
+              <div class="msgBox__title">Validation</div>
+              <div class="msgBox__body" id="validationMsg">No camera running.</div>
+            </div>
+
+            <div class="smallNote">
+              Tip: Use even lighting, remove harsh shadows, and keep the head straight.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__head">
+          <h2>2) Output</h2>
+          <p>Automatic: background to pure white + enhancement, then print-sheet generation (A4).</p>
+        </div>
+
+        <div class="outputGrid">
+          <div class="outputBox">
+            <div class="outputBox__head">
+              <div class="outputBox__title">Processed Photo (35×45mm)</div>
+              <div class="outputBox__meta" id="photoMeta">—</div>
+            </div>
+            <canvas id="photoCanvas" class="canvas canvas--photo" width="413" height="531"></canvas>
+          </div>
+
+          <div class="outputBox">
+            <div class="outputBox__head">
+              <div class="outputBox__title">Print Sheet Preview (A4)</div>
+              <div class="outputBox__meta" id="sheetMeta">—</div>
+            </div>
+            <canvas id="sheetCanvasPreview" class="canvas canvas--sheet" width="620" height="877"></canvas>
+
+            <div class="controls controls--tight">
+              <div class="controlRow">
+                <label class="label" for="qty">Quantity</label>
+                <select id="qty" class="select" disabled>
+                  <option value="1">1</option>
+                  <option value="4" selected>4</option>
+                  <option value="8">8</option>
+                  <option value="12">12</option>
+                </select>
+              </div>
+
+              <div class="controlRow">
+                <button id="btnDownloadJpg" class="btn btn--primary" disabled>Download Print Sheet (JPG)</button>
+                <button id="btnDownloadPdf" class="btn btn--ghost" disabled>Download Print Sheet (PDF)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <div>Works fully in-browser. Best on Chrome/Edge/Safari over HTTPS (GitHub Pages).</div>
+      </footer>
+    </main>
+
+    <!-- Hidden working canvases -->
+    <canvas id="workCanvas" class="hidden"></canvas>
+    <canvas id="maskCanvas" class="hidden"></canvas>
+
+    <!-- AI libs (client-side only) -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
+    <!-- PDF export -->
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
