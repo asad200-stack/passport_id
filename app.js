@@ -86,20 +86,20 @@
   function setStatus(text, kind = "info") {
     statusPill.textContent = text;
     const map = {
-      info: "rgba(255,255,255,.06)",
-      ok: "rgba(34,197,94,.16)",
-      warn: "rgba(251,191,36,.16)",
-      bad: "rgba(251,113,133,.16)",
+      info: "rgba(15,23,42,.04)",
+      ok: "rgba(22,163,74,.14)",
+      warn: "rgba(217,119,6,.14)",
+      bad: "rgba(225,29,72,.14)",
     };
     statusPill.style.background = map[kind] || map.info;
     statusPill.style.borderColor =
       kind === "ok"
-        ? "rgba(34,197,94,.45)"
+        ? "rgba(22,163,74,.35)"
         : kind === "warn"
-          ? "rgba(251,191,36,.45)"
+          ? "rgba(217,119,6,.35)"
           : kind === "bad"
-            ? "rgba(251,113,133,.45)"
-            : "rgba(255,255,255,.12)";
+            ? "rgba(225,29,72,.35)"
+            : "rgba(15,23,42,.12)";
   }
 
   function setValidation(text, kind = "info") {
