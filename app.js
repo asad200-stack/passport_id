@@ -87,6 +87,7 @@
   const STORAGE = {
     bgEngine: "passport_bg_engine",
     removebgKey: "passport_removebg_key",
+    rawPhoto: "passport_raw_photo_v1",
   };
 
   // Face detection fallback mode:
@@ -144,6 +145,52 @@
     const engine = bgEngine?.value || "mediapipe";
     if (apiKeyRow) apiKeyRow.style.display = engine === "removebg" ? "flex" : "none";
     if (btnApplyBg) enable(btnApplyBg, hasRawPhoto);
+  }
+
+  async function restoreRawPhotoFromSession() {
+    try {
+      const dataUrl = sessionStorage.getItem(STORAGE.rawPhoto);
+      if (!dataUrl) return false;
+
+      const img = new Image();
+      img.decoding = "async";
+      img.src = dataUrl;
+
+      if (img.decode) {
+        try {
+          await img.decode();
+        } catch {
+          await new Promise((res, rej) => {
+            img.onload = () => res();
+            img.onerror = () => rej(new Error("Failed to load stored photo."));
+          });
+        }
+      } else {
+        await new Promise((res, rej) => {
+          img.onload = () => res();
+          img.onerror = () => rej(new Error("Failed to load stored photo."));
+        });
+      }
+
+      rawPhotoCanvas.width = PHOTO_PX.w;
+      rawPhotoCanvas.height = PHOTO_PX.h;
+      const rctx = rawPhotoCanvas.getContext("2d", { willReadFrequently: true });
+      rctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+      rctx.drawImage(img, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
+
+      photoCanvas.width = PHOTO_PX.w;
+      photoCanvas.height = PHOTO_PX.h;
+      const pctx = photoCanvas.getContext("2d", { willReadFrequently: true });
+      pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+      pctx.drawImage(rawPhotoCanvas, 0, 0);
+
+      hasRawPhoto = true;
+      photoMeta.textContent = `${PHOTO_MM.w}×${PHOTO_MM.h}mm • ${PHOTO_PX.w}×${PHOTO_PX.h}px @ ${PHOTO_DPI}DPI`;
+      updateBgEngineUi();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function enable(el, on) {
@@ -1034,6 +1081,13 @@
     rctx.drawImage(workCanvas, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
     hasRawPhoto = true;
     updateBgEngineUi();
+    // Persist raw photo for this browser session so Apply Background works after refresh.
+    try {
+      const dataUrl = rawPhotoCanvas.toDataURL("image/jpeg", 0.95);
+      sessionStorage.setItem(STORAGE.rawPhoto, dataUrl);
+    } catch {
+      // ignore
+    }
     // Copy raw into output canvas (will be processed)
     pctx.drawImage(rawPhotoCanvas, 0, 0);
 
@@ -1206,6 +1260,9 @@
     sctx.fillStyle = "#ffffff";
     sctx.fillRect(0, 0, sheetCanvasPreview.width, sheetCanvasPreview.height);
 
+    // Restore last captured photo (if any) so Apply Background is clickable after refresh.
+    await restoreRawPhotoFromSession();
+
     // Attempt device listing (labels may be blank until permission)
     try {
       await listCameras();
@@ -1243,6 +1300,11 @@
       sheetMeta.textContent = "—";
       hasRawPhoto = false;
       updateBgEngineUi();
+      try {
+        sessionStorage.removeItem(STORAGE.rawPhoto);
+      } catch {
+        // ignore
+      }
       setValidation("Detecting face…", "info");
       if (!detectionTimer) {
         detectionTimer = setInterval(() => void validateLive(), 240);
