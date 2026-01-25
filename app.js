@@ -595,13 +595,14 @@
   }
 
   // --- Image processing ---
-  function applyEnhancements(ctx, w, h) {
+  function applySubtleEnhancements(ctx, w, h) {
     const img = ctx.getImageData(0, 0, w, h);
     const d = img.data;
 
-    const brightness = 6; // -255..255
-    const contrast = 1.10; // 1 = none
-    const gamma = 1.03;
+    // Passport-safe: preserve skin texture (no beautify / no heavy shadow lift).
+    const brightness = 2; // -255..255
+    const contrast = 1.04; // 1 = none
+    const gamma = 1.0;
     const invGamma = 1 / gamma;
 
     for (let i = 0; i < d.length; i += 4) {
@@ -614,23 +615,14 @@
       g = (g - 128) * contrast + 128 + brightness;
       b = (b - 128) * contrast + 128 + brightness;
 
-      // gentle "natural skin tone" (tiny warm shift)
-      r *= 1.02;
-      b *= 0.99;
+      // No skin tone shifting (can look artificial)
 
       // gamma
       r = 255 * Math.pow(clamp(r, 0, 255) / 255, invGamma);
       g = 255 * Math.pow(clamp(g, 0, 255) / 255, invGamma);
       b = 255 * Math.pow(clamp(b, 0, 255) / 255, invGamma);
 
-      // shadow lift (very mild)
-      const luma = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-      if (luma < 0.35) {
-        const lift = (0.35 - luma) * 38;
-        r += lift;
-        g += lift;
-        b += lift;
-      }
+      // No shadow lifting (can create blotchy/white patches on faces)
 
       d[i] = clamp(r, 0, 255);
       d[i + 1] = clamp(g, 0, 255);
@@ -639,16 +631,16 @@
     }
 
     ctx.putImageData(img, 0, 0);
-    unsharp(ctx, w, h);
+    unsharpLow(ctx, w, h);
   }
 
-  function unsharp(ctx, w, h) {
-    // Simple 3x3 sharpening kernel (fast)
+  function unsharpLow(ctx, w, h) {
+    // Very mild sharpening (keeps pores/texture intact)
     const src = ctx.getImageData(0, 0, w, h);
     const dst = ctx.createImageData(w, h);
     const s = src.data;
     const d = dst.data;
-    const k = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+    const k = [0, -0.6, 0, -0.6, 3.4, -0.6, 0, -0.6, 0];
 
     const idx = (x, y) => (y * w + x) * 4;
     for (let y = 1; y < h - 1; y++) {
@@ -745,6 +737,40 @@
     // Tiny blur for softer edges (reduces jaggies)
     const blurred = boxBlurAlpha3x3(kept, w, h);
 
+    for (let p = 0, j = 0; p < d.length; p += 4, j++) d[p + 3] = blurred[j];
+
+    ctx.putImageData(img, 0, 0);
+    return segMaskCanvas;
+  }
+
+  function refineSegmentationMaskLite(segMaskImage, w, h) {
+    // Lite refinement:
+    // - smooth alpha ramp + tiny feather (1px)
+    // - preserves hair/skin detail better than aggressive masking
+    segMaskCanvas.width = w;
+    segMaskCanvas.height = h;
+    const ctx = segMaskCanvas.getContext("2d", { willReadFrequently: true });
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(segMaskImage, 0, 0, w, h);
+
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    const SOFT = 60;
+    const HARD = 210;
+
+    for (let i = 0; i < d.length; i += 4) {
+      const v = d[i];
+      const t = Math.max(0, Math.min(1, (v - SOFT) / (HARD - SOFT)));
+      const a = Math.round(255 * Math.pow(t, 0.9));
+      d[i] = 0;
+      d[i + 1] = 0;
+      d[i + 2] = 0;
+      d[i + 3] = a;
+    }
+
+    const alpha = new Uint8ClampedArray((d.length / 4) | 0);
+    for (let p = 0, j = 0; p < d.length; p += 4, j++) alpha[j] = d[p + 3];
+    const blurred = boxBlurAlpha3x3(alpha, w, h);
     for (let p = 0, j = 0; p < d.length; p += 4, j++) d[p + 3] = blurred[j];
 
     ctx.putImageData(img, 0, 0);
@@ -965,21 +991,18 @@
       try {
         await selfieSegmentation.send({ image: photoCanvas });
       } catch (e) {
-        applyEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
+        applySubtleEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
         afterProcessSuccess({ note: "Segmentation not supported on this device (kept original background)." });
         return;
       }
       if (!lastSegResults?.segmentationMask) {
-        applyEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
+        applySubtleEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
         afterProcessSuccess({ note: "Segmentation unavailable (kept original background)." });
         return;
       }
 
-      const facePoint = {
-        x: ((bb.xCenter * srcW - crop.sx) / crop.sw) * PHOTO_PX.w,
-        y: ((bb.yCenter * srcH - crop.sy) / crop.sh) * PHOTO_PX.h,
-      };
-      const refinedMask = refineSegmentationMask(lastSegResults.segmentationMask, PHOTO_PX.w, PHOTO_PX.h, facePoint);
+      // Use lite mask refinement to avoid aggressive cutouts / face corruption.
+      const refinedMask = refineSegmentationMaskLite(lastSegResults.segmentationMask, PHOTO_PX.w, PHOTO_PX.h);
       mctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
       mctx.drawImage(photoCanvas, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
       mctx.globalCompositeOperation = "destination-in";
@@ -991,13 +1014,10 @@
       pctx.fillStyle = "#ffffff";
       pctx.fillRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
       pctx.drawImage(maskCanvas, 0, 0);
-
-      // Edge color decontamination (reduces yellow/gray outline)
-      decontaminateEdgesTowardWhite(pctx, PHOTO_PX.w, PHOTO_PX.h);
     }
 
     // Enhance (brightness/contrast/shadows/sharpen)
-    applyEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
+    applySubtleEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
     afterProcessSuccess({ note: engine === "removebg" ? "Studio background removal applied." : "Background set to pure white." });
   }
 
