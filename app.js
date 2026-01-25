@@ -10,14 +10,18 @@
 
   // --- Constants (print) ---
   const MM_PER_INCH = 25.4;
-  const OUTPUT_DPI = 300; // print-quality baseline for photo studios
+  // Keep the A4 sheet at 300DPI for mobile performance.
+  // Render the passport crop at higher DPI for sharper output (then downsample onto the sheet).
+  const SHEET_DPI = 300;
+  const PHOTO_DPI = 450;
   const A4_MM = { w: 210, h: 297 };
   const PHOTO_MM = { w: 35, h: 45 };
   const PHOTO_AR = PHOTO_MM.w / PHOTO_MM.h; // 35:45
 
-  const pxFromMm = (mm, dpi = OUTPUT_DPI) => Math.round((mm / MM_PER_INCH) * dpi);
-  const PHOTO_PX = { w: pxFromMm(PHOTO_MM.w), h: pxFromMm(PHOTO_MM.h) };
-  const SHEET_PX = { w: pxFromMm(A4_MM.w), h: pxFromMm(A4_MM.h) };
+  const pxFromMm = (mm, dpi) => Math.round((mm / MM_PER_INCH) * dpi);
+  const PHOTO_PX = { w: pxFromMm(PHOTO_MM.w, PHOTO_DPI), h: pxFromMm(PHOTO_MM.h, PHOTO_DPI) };
+  const PHOTO_SHEET_PX = { w: pxFromMm(PHOTO_MM.w, SHEET_DPI), h: pxFromMm(PHOTO_MM.h, SHEET_DPI) };
+  const SHEET_PX = { w: pxFromMm(A4_MM.w, SHEET_DPI), h: pxFromMm(A4_MM.h, SHEET_DPI) };
 
   const MP_FACE_VERSION = "0.4.1646425229";
   const MP_SEG_VERSION = "0.1.1675465747";
@@ -70,6 +74,7 @@
   /** @type {number} */
   const DETECT_MAX_W = 360;
   let noFaceStreak = 0;
+  const segMaskCanvas = document.createElement("canvas");
 
   // Face detection fallback mode:
   // - "mediapipe" (default)
@@ -348,8 +353,8 @@
       audio: false,
       video: {
         deviceId: deviceId ? { exact: deviceId } : undefined,
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
       },
     };
 
@@ -609,6 +614,70 @@
     ctx.putImageData(dst, 0, 0);
   }
 
+  function refineSegmentationMask(segMaskImage, w, h) {
+    // Make background removal more aggressive:
+    // - Threshold the mask so background becomes 100% white
+    // - Slight feather for cleaner edges
+    // - Morphological close (fill tiny holes)
+    segMaskCanvas.width = w;
+    segMaskCanvas.height = h;
+    const ctx = segMaskCanvas.getContext("2d", { willReadFrequently: true });
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(segMaskImage, 0, 0, w, h);
+
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+
+    // Tune for "clean white" (more removal; slightly less hair detail)
+    const SOFT = 140;
+    const HARD = 200;
+
+    for (let i = 0; i < d.length; i += 4) {
+      const v = d[i]; // grayscale intensity
+      let a = 0;
+      if (v >= HARD) a = 255;
+      else if (v <= SOFT) a = 0;
+      else a = Math.round(((v - SOFT) / (HARD - SOFT)) * 255);
+      d[i] = 0;
+      d[i + 1] = 0;
+      d[i + 2] = 0;
+      d[i + 3] = a;
+    }
+
+    // Morphological close on alpha (3x3): dilate then erode
+    const alpha = new Uint8ClampedArray((d.length / 4) | 0);
+    for (let p = 0, j = 0; p < d.length; p += 4, j++) alpha[j] = d[p + 3];
+    const dil = morphAlpha(alpha, w, h, true);
+    const clo = morphAlpha(dil, w, h, false);
+    for (let p = 0, j = 0; p < d.length; p += 4, j++) d[p + 3] = clo[j];
+
+    ctx.putImageData(img, 0, 0);
+    return segMaskCanvas;
+  }
+
+  function morphAlpha(src, w, h, dilate) {
+    const dst = new Uint8ClampedArray(src.length);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (x === 0 || y === 0 || x === w - 1 || y === h - 1) {
+          dst[i] = src[i];
+          continue;
+        }
+        let v = dilate ? 0 : 255;
+        for (let oy = -1; oy <= 1; oy++) {
+          const row = (y + oy) * w;
+          for (let ox = -1; ox <= 1; ox++) {
+            const s = src[row + (x + ox)];
+            v = dilate ? Math.max(v, s) : Math.min(v, s);
+          }
+        }
+        dst[i] = v;
+      }
+    }
+    return dst;
+  }
+
   // --- Capture -> Process ---
   async function captureAndProcess() {
     if (!stream) return;
@@ -691,11 +760,12 @@
       return;
     }
 
-    // Build person-only layer
+    // Build person-only layer (using refined mask for cleaner white background)
+    const refinedMask = refineSegmentationMask(lastSegResults.segmentationMask, PHOTO_PX.w, PHOTO_PX.h);
     mctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
     mctx.drawImage(photoCanvas, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
     mctx.globalCompositeOperation = "destination-in";
-    mctx.drawImage(lastSegResults.segmentationMask, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
+    mctx.drawImage(refinedMask, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
     mctx.globalCompositeOperation = "source-over";
 
     // Composite onto pure white background
@@ -710,7 +780,7 @@
   }
 
   function afterProcessSuccess({ note }) {
-    photoMeta.textContent = `${PHOTO_MM.w}×${PHOTO_MM.h}mm • ${PHOTO_PX.w}×${PHOTO_PX.h}px @ ${OUTPUT_DPI}DPI`;
+    photoMeta.textContent = `${PHOTO_MM.w}×${PHOTO_MM.h}mm • ${PHOTO_PX.w}×${PHOTO_PX.h}px @ ${PHOTO_DPI}DPI`;
     setValidation(`Done. ${note}`, "ok");
     enable(qtySelect, true);
     enable(btnDownloadJpg, true);
@@ -742,12 +812,13 @@
     const scaleY = targetH / SHEET_PX.h;
     const scale = Math.min(scaleX, scaleY);
 
-    const photoW = PHOTO_PX.w * scale;
-    const photoH = PHOTO_PX.h * scale;
-    const margin = 10 * (OUTPUT_DPI / MM_PER_INCH) * scale; // ~10mm in px scaled
+    // Keep real-world sizes correct for A4@300DPI (even if photo crop is rendered at higher DPI).
+    const photoW = PHOTO_SHEET_PX.w * scale;
+    const photoH = PHOTO_SHEET_PX.h * scale;
+    const margin = 10 * (SHEET_DPI / MM_PER_INCH) * scale; // ~10mm in px scaled
 
     const { cols, rows } = gridForQty(qty);
-    let gap = 7 * (OUTPUT_DPI / MM_PER_INCH) * scale; // ~7mm
+    let gap = 7 * (SHEET_DPI / MM_PER_INCH) * scale; // ~7mm
 
     let gridW = cols * photoW + (cols - 1) * gap;
     let gridH = rows * photoH + (rows - 1) * gap;
@@ -800,7 +871,7 @@
     const pH = sheetCanvasPreview.height;
     renderSheet(sheetCanvasPreview, pW, pH, qty);
 
-    sheetMeta.textContent = `A4 ${A4_MM.w}×${A4_MM.h}mm • ${SHEET_PX.w}×${SHEET_PX.h}px @ ${OUTPUT_DPI}DPI • Qty ${qty}`;
+    sheetMeta.textContent = `A4 ${A4_MM.w}×${A4_MM.h}mm • ${SHEET_PX.w}×${SHEET_PX.h}px @ ${SHEET_DPI}DPI • Qty ${qty}`;
   }
 
   // --- Download helpers ---
