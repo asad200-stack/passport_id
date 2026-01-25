@@ -117,9 +117,15 @@
     <canvas id="workCanvas" class="hidden"></canvas>
     <canvas id="maskCanvas" class="hidden"></canvas>
 
-    <!-- AI libs (client-side only) -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
+    <!-- AI libs (client-side only) - pinned versions for iOS/Safari reliability -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/face_detection.js"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/selfie_segmentation.js"
+      crossorigin="anonymous"
+    ></script>
     <!-- PDF export -->
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 

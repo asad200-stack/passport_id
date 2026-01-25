@@ -65,6 +65,18 @@
   /** @type {any} */
   let lastSegResults = null;
 
+  // Face detection fallback mode:
+  // - "mediapipe" (default)
+  // - "shape" (Shape Detection API FaceDetector)
+  // - "blazeface" (TensorFlow.js + BlazeFace, lazy-loaded)
+  /** @type {"mediapipe" | "shape" | "blazeface"} */
+  let faceMode = "mediapipe";
+  /** @type {any} */
+  let faceDetectorApi = null;
+  /** @type {any} */
+  let blazeModel = null;
+  let mpFaceBroken = false;
+
   // Full-res sheet used for export (A4 @ 300dpi)
   const sheetCanvasFull = document.createElement("canvas");
   sheetCanvasFull.width = SHEET_PX.w;
@@ -144,6 +156,103 @@
     selfieSegmentation.onResults((r) => {
       lastSegResults = r;
     });
+  }
+
+  function loadScriptOnce(url) {
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[data-url="${url}"]`);
+      if (existing) return resolve();
+      const s = document.createElement("script");
+      s.src = url;
+      s.async = true;
+      s.defer = true;
+      s.crossOrigin = "anonymous";
+      s.dataset.url = url;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error(`Failed to load ${url}`));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function ensureFaceFallbackReady() {
+    // If MediaPipe face is working, do nothing.
+    if (!mpFaceBroken) return;
+
+    // 1) Try native Shape Detection API (fast, no extra downloads).
+    if (typeof window.FaceDetector === "function") {
+      try {
+        faceDetectorApi = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+        faceMode = "shape";
+        setValidation("Using compatibility face detection (native).", "warn");
+        return;
+      } catch {
+        // continue to tfjs
+      }
+    }
+
+    // 2) TFJS + BlazeFace (lazy-loaded)
+    if (faceMode === "blazeface" && blazeModel) return;
+    setValidation("Loading compatibility face detection… (first time may take a few seconds)", "warn");
+    await loadScriptOnce("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js");
+    await loadScriptOnce("https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.1.0/dist/blazeface.min.umd.js");
+    if (!window.tf || !window.blazeface) throw new Error("Compatibility face detection failed to initialize.");
+    await window.tf.ready();
+    blazeModel = await window.blazeface.load();
+    faceMode = "blazeface";
+    setValidation("Using compatibility face detection (TFJS).", "warn");
+  }
+
+  function isMpAbortError(e) {
+    const msg = String(e?.message || e || "").toLowerCase();
+    return msg.includes("aborted") || msg.includes("abort()");
+  }
+
+  async function detectNormFaceBox(imageElOrCanvas) {
+    // Returns a normalized bbox-like object or null.
+    if (faceMode === "mediapipe" && faceDetection && !mpFaceBroken) {
+      await faceDetection.send({ image: imageElOrCanvas });
+      const dets = lastFaceResults?.detections || [];
+      if (!Array.isArray(dets) || dets.length === 0) return null;
+      if (dets.length > 1) return "multiple";
+      return normBboxFromDetection(dets[0]);
+    }
+
+    if (faceMode === "shape" && faceDetectorApi) {
+      const faces = await faceDetectorApi.detect(imageElOrCanvas);
+      if (!faces || faces.length === 0) return null;
+      if (faces.length > 1) return "multiple";
+      const bb = faces[0].boundingBox; // DOMRectReadOnly
+      const w = imageElOrCanvas.videoWidth || imageElOrCanvas.width;
+      const h = imageElOrCanvas.videoHeight || imageElOrCanvas.height;
+      if (!w || !h) return null;
+      const xCenter = (bb.x + bb.width / 2) / w;
+      const yCenter = (bb.y + bb.height / 2) / h;
+      return { xCenter, yCenter, width: bb.width / w, height: bb.height / h, xmin: bb.x / w, ymin: bb.y / h };
+    }
+
+    if (faceMode === "blazeface" && blazeModel) {
+      const preds = await blazeModel.estimateFaces(imageElOrCanvas, false);
+      if (!preds || preds.length === 0) return null;
+      if (preds.length > 1) return "multiple";
+      const p = preds[0];
+      const w = imageElOrCanvas.videoWidth || imageElOrCanvas.width;
+      const h = imageElOrCanvas.videoHeight || imageElOrCanvas.height;
+      if (!w || !h) return null;
+      // topLeft / bottomRight are [x,y]
+      const tl = p.topLeft || (p.box && [p.box.xMin, p.box.yMin]) || [0, 0];
+      const br = p.bottomRight || (p.box && [p.box.xMax, p.box.yMax]) || [0, 0];
+      const xMin = tl[0];
+      const yMin = tl[1];
+      const xMax = br[0];
+      const yMax = br[1];
+      const bw = Math.max(1, xMax - xMin);
+      const bh = Math.max(1, yMax - yMin);
+      const xCenter = (xMin + bw / 2) / w;
+      const yCenter = (yMin + bh / 2) / h;
+      return { xCenter, yCenter, width: bw / w, height: bh / h, xmin: xMin / w, ymin: yMin / h };
+    }
+
+    return null;
   }
 
   // --- Camera ---
@@ -262,17 +371,13 @@
     return null;
   }
 
-  function validateFromFaceResults(results) {
-    const dets = results?.detections || [];
-    if (!Array.isArray(dets) || dets.length === 0) {
-      return { ok: false, kind: "bad", msg: "No face detected. Please face the camera." };
-    }
-    if (dets.length > 1) {
+  function validateFromNormBox(bb) {
+    if (bb === "multiple") {
       return { ok: false, kind: "bad", msg: "Multiple faces detected. Only one person must be in frame." };
     }
-
-    const bb = normBboxFromDetection(dets[0]);
-    if (!bb) return { ok: false, kind: "bad", msg: "Face detected but bounding box is unavailable. Try again." };
+    if (!bb) {
+      return { ok: false, kind: "bad", msg: "No face detected. Please face the camera." };
+    }
 
     const xOff = Math.abs(bb.xCenter - 0.5);
     const yOff = Math.abs(bb.yCenter - 0.45); // slightly above center is typical for head framing
@@ -295,8 +400,21 @@
     if (!video.videoWidth || !video.videoHeight) return;
     isDetecting = true;
     try {
-      await faceDetection.send({ image: video });
-      const v = validateFromFaceResults(lastFaceResults);
+      let bb;
+      try {
+        bb = await detectNormFaceBox(video);
+      } catch (e) {
+        // MediaPipe can hard-abort on some iOS builds; switch to fallback.
+        if (faceMode === "mediapipe" && isMpAbortError(e)) {
+          mpFaceBroken = true;
+          await ensureFaceFallbackReady();
+          bb = await detectNormFaceBox(video);
+        } else {
+          throw e;
+        }
+      }
+
+      const v = validateFromNormBox(bb);
       setValidation(v.msg, v.kind);
       enable(btnCapture, v.ok);
     } catch (e) {
@@ -476,8 +594,19 @@
     wctx.drawImage(video, 0, 0, srcW, srcH);
 
     // Re-run detection on captured frame for stable bbox.
-    await faceDetection.send({ image: workCanvas });
-    const v = validateFromFaceResults(lastFaceResults);
+    let bb;
+    try {
+      bb = await detectNormFaceBox(workCanvas);
+    } catch (e) {
+      if (faceMode === "mediapipe" && isMpAbortError(e)) {
+        mpFaceBroken = true;
+        await ensureFaceFallbackReady();
+        bb = await detectNormFaceBox(workCanvas);
+      } else {
+        throw e;
+      }
+    }
+    const v = validateFromNormBox(bb);
     if (!v.ok) {
       setValidation(`Capture blocked: ${v.msg}`, v.kind === "warn" ? "warn" : "bad");
       // Resume live validation
@@ -485,9 +614,7 @@
       return;
     }
 
-    const det = lastFaceResults.detections[0];
-    const normBox = normBboxFromDetection(det);
-    const crop = computeCropRectFromFace(normBox, srcW, srcH);
+    const crop = computeCropRectFromFace(bb, srcW, srcH);
 
     // Crop into a canvas that matches passport output pixels
     photoCanvas.width = PHOTO_PX.w;
@@ -504,7 +631,14 @@
     const mctx = maskCanvas.getContext("2d", { willReadFrequently: true });
 
     lastSegResults = null;
-    await selfieSegmentation.send({ image: photoCanvas });
+    try {
+      await selfieSegmentation.send({ image: photoCanvas });
+    } catch (e) {
+      // If segmentation crashes on a device, we still produce a usable photo.
+      applyEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
+      afterProcessSuccess({ note: "Segmentation not supported on this device (kept original background)." });
+      return;
+    }
     if (!lastSegResults?.segmentationMask) {
       // fallback: still deliver a photo if segmentation fails
       applyEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
