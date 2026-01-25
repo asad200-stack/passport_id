@@ -65,6 +65,12 @@
   /** @type {any} */
   let lastSegResults = null;
 
+  // Fast detection frame (downscaled) to keep iPhone responsive.
+  const detectCanvas = document.createElement("canvas");
+  /** @type {number} */
+  const DETECT_MAX_W = 360;
+  let noFaceStreak = 0;
+
   // Face detection fallback mode:
   // - "mediapipe" (default)
   // - "shape" (Shape Detection API FaceDetector)
@@ -140,7 +146,7 @@
     });
     faceDetection.setOptions({
       modelSelection: 0, // short-range (studio)
-      minDetectionConfidence: 0.6,
+      minDetectionConfidence: 0.5, // faster unlock on mobile
     });
     faceDetection.onResults((r) => {
       lastFaceResults = r;
@@ -255,6 +261,38 @@
     return null;
   }
 
+  function drawDetectFrameFromVideo() {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return null;
+
+    const scale = Math.min(1, DETECT_MAX_W / vw);
+    const w = Math.max(160, Math.round(vw * scale));
+    const h = Math.max(160, Math.round(vh * scale));
+    if (detectCanvas.width !== w) detectCanvas.width = w;
+    if (detectCanvas.height !== h) detectCanvas.height = h;
+
+    const ctx = detectCanvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0, w, h);
+    return detectCanvas;
+  }
+
+  async function maybeSwitchToFallbackIfStuck(bb) {
+    // If MediaPipe is running but isn't seeing any face for a while,
+    // auto-switch to a compatibility detector (helps iPhone Safari a lot).
+    if (faceMode !== "mediapipe" || mpFaceBroken) return;
+
+    if (!bb) noFaceStreak += 1;
+    else noFaceStreak = 0;
+
+    // ~2 seconds (validateLive runs ~ every 240ms)
+    if (noFaceStreak >= 8) {
+      mpFaceBroken = true;
+      await ensureFaceFallbackReady();
+      noFaceStreak = 0;
+    }
+  }
+
   // --- Camera ---
   async function listCameras() {
     const devices = await navigator.mediaDevices.enumerateDevices();
@@ -310,8 +348,8 @@
       audio: false,
       video: {
         deviceId: deviceId ? { exact: deviceId } : undefined,
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
       },
     };
 
@@ -335,10 +373,11 @@
 
     cameraHint.textContent = "Face detection running…";
     setValidation("Detecting face…", "info");
+    noFaceStreak = 0;
 
     detectionTimer = setInterval(() => {
       void validateLive();
-    }, 240);
+    }, 220);
   }
 
   // --- Face detection / validation ---
@@ -400,15 +439,21 @@
     if (!video.videoWidth || !video.videoHeight) return;
     isDetecting = true;
     try {
+      const frame = drawDetectFrameFromVideo() || video;
       let bb;
       try {
-        bb = await detectNormFaceBox(video);
+        bb = await detectNormFaceBox(frame);
+        await maybeSwitchToFallbackIfStuck(bb);
+        if (mpFaceBroken && faceMode !== "mediapipe") {
+          // re-run immediately on new detector for faster unlock
+          bb = await detectNormFaceBox(frame);
+        }
       } catch (e) {
         // MediaPipe can hard-abort on some iOS builds; switch to fallback.
         if (faceMode === "mediapipe" && isMpAbortError(e)) {
           mpFaceBroken = true;
           await ensureFaceFallbackReady();
-          bb = await detectNormFaceBox(video);
+          bb = await detectNormFaceBox(frame);
         } else {
           throw e;
         }
