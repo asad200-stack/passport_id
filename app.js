@@ -52,6 +52,7 @@
   const bgEngine = /** @type {HTMLSelectElement} */ ($("bgEngine"));
   const removebgKey = /** @type {HTMLInputElement} */ ($("removebgKey"));
   const apiKeyRow = $("apiKeyRow");
+  const btnApplyBg = /** @type {HTMLButtonElement} */ ($("btnApplyBg"));
 
   // --- State ---
   /** @type {MediaStream | null} */
@@ -78,6 +79,10 @@
   const DETECT_MAX_W = 360;
   let noFaceStreak = 0;
   const segMaskCanvas = document.createElement("canvas");
+
+  // Keep an unprocessed crop so Studio/Fast can be re-applied without stacking filters.
+  const rawPhotoCanvas = document.createElement("canvas");
+  let hasRawPhoto = false;
 
   const STORAGE = {
     bgEngine: "passport_bg_engine",
@@ -138,6 +143,7 @@
   function updateBgEngineUi() {
     const engine = bgEngine?.value || "mediapipe";
     if (apiKeyRow) apiKeyRow.style.display = engine === "removebg" ? "flex" : "none";
+    if (btnApplyBg) enable(btnApplyBg, hasRawPhoto);
   }
 
   function enable(el, on) {
@@ -224,6 +230,55 @@
     ctx.fillRect(0, 0, out.width, out.height);
     ctx.drawImage(bmp, 0, 0, out.width, out.height);
     return out;
+  }
+  async function applyBackgroundToCurrent() {
+    if (!hasRawPhoto) {
+      setValidation("No photo captured yet. Take Photo first.", "warn");
+      return;
+    }
+    const engine = bgEngine?.value || "mediapipe";
+    const pctx = photoCanvas.getContext("2d", { willReadFrequently: true });
+    setStatus("Processing…", "info");
+    try {
+      if (engine === "removebg") {
+        setValidation("Applying Studio background (remove.bg)…", "info");
+        const out = await removeBackgroundStudioRemoveBg(rawPhotoCanvas);
+        pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+        pctx.fillStyle = "#ffffff";
+        pctx.fillRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+        pctx.drawImage(out, 0, 0);
+      } else {
+        // Fast on-device (preview)
+        setValidation("Applying fast background (on-device)…", "info");
+        lastSegResults = null;
+        await selfieSegmentation.send({ image: rawPhotoCanvas });
+        if (!lastSegResults?.segmentationMask) throw new Error("Segmentation unavailable on this device.");
+
+        maskCanvas.width = PHOTO_PX.w;
+        maskCanvas.height = PHOTO_PX.h;
+        const mctx = maskCanvas.getContext("2d", { willReadFrequently: true });
+        const refinedMask = refineSegmentationMaskLite(lastSegResults.segmentationMask, PHOTO_PX.w, PHOTO_PX.h);
+        mctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+        mctx.drawImage(rawPhotoCanvas, 0, 0);
+        mctx.globalCompositeOperation = "destination-in";
+        mctx.drawImage(refinedMask, 0, 0);
+        mctx.globalCompositeOperation = "source-over";
+
+        pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+        pctx.fillStyle = "#ffffff";
+        pctx.fillRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+        pctx.drawImage(maskCanvas, 0, 0);
+      }
+
+      // Subtle final adjustments (safe)
+      applySubtleEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
+      afterProcessSuccess({ note: engine === "removebg" ? "Studio background removal applied." : "Fast background applied." });
+    } catch (e) {
+      // Surface errors (CORS, invalid key, quota)
+      const msg = String(e?.message || e || "Unknown error");
+      setValidation(`Background apply failed: ${msg}`, "bad");
+      setStatus("Blocked", "bad");
+    }
   }
 
   function removeBackgroundFastOnDevice(pctx) {
@@ -969,7 +1024,18 @@
     pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
     pctx.imageSmoothingEnabled = true;
     pctx.imageSmoothingQuality = "high";
-    pctx.drawImage(workCanvas, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
+    // Draw into raw canvas first (unprocessed base)
+    rawPhotoCanvas.width = PHOTO_PX.w;
+    rawPhotoCanvas.height = PHOTO_PX.h;
+    const rctx = rawPhotoCanvas.getContext("2d", { willReadFrequently: true });
+    rctx.imageSmoothingEnabled = true;
+    rctx.imageSmoothingQuality = "high";
+    rctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+    rctx.drawImage(workCanvas, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
+    hasRawPhoto = true;
+    updateBgEngineUi();
+    // Copy raw into output canvas (will be processed)
+    pctx.drawImage(rawPhotoCanvas, 0, 0);
 
     // Segmentation (remove background -> white)
     maskCanvas.width = PHOTO_PX.w;
@@ -977,48 +1043,13 @@
     const mctx = maskCanvas.getContext("2d", { willReadFrequently: true });
 
     const engine = bgEngine?.value || "mediapipe";
-    if (engine === "removebg") {
-      // Professional-grade background removal via remove.bg
-      setValidation("Processing (remove.bg HD)…", "info");
-      const out = await removeBackgroundStudioRemoveBg(photoCanvas);
-      pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
-      pctx.fillStyle = "#ffffff";
-      pctx.fillRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
-      pctx.drawImage(out, 0, 0);
-    } else {
-      // On-device (best-effort)
-      lastSegResults = null;
-      try {
-        await selfieSegmentation.send({ image: photoCanvas });
-      } catch (e) {
-        applySubtleEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
-        afterProcessSuccess({ note: "Segmentation not supported on this device (kept original background)." });
-        return;
-      }
-      if (!lastSegResults?.segmentationMask) {
-        applySubtleEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
-        afterProcessSuccess({ note: "Segmentation unavailable (kept original background)." });
-        return;
-      }
-
-      // Use lite mask refinement to avoid aggressive cutouts / face corruption.
-      const refinedMask = refineSegmentationMaskLite(lastSegResults.segmentationMask, PHOTO_PX.w, PHOTO_PX.h);
-      mctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
-      mctx.drawImage(photoCanvas, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
-      mctx.globalCompositeOperation = "destination-in";
-      mctx.drawImage(refinedMask, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
-      mctx.globalCompositeOperation = "source-over";
-
-      // Composite onto pure white background
-      pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
-      pctx.fillStyle = "#ffffff";
-      pctx.fillRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
-      pctx.drawImage(maskCanvas, 0, 0);
+    // Apply background based on selected engine (and show errors if it fails)
+    try {
+      await applyBackgroundToCurrent();
+    } catch {
+      // applyBackgroundToCurrent already reports errors
     }
-
-    // Enhance (brightness/contrast/shadows/sharpen)
-    applySubtleEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
-    afterProcessSuccess({ note: engine === "removebg" ? "Studio background removal applied." : "Background set to pure white." });
+    return;
   }
 
   function afterProcessSuccess({ note }) {
@@ -1210,11 +1241,19 @@
       enable(qtySelect, false);
       photoMeta.textContent = "—";
       sheetMeta.textContent = "—";
+      hasRawPhoto = false;
+      updateBgEngineUi();
       setValidation("Detecting face…", "info");
       if (!detectionTimer) {
         detectionTimer = setInterval(() => void validateLive(), 240);
       }
     });
+
+    if (btnApplyBg) {
+      btnApplyBg.addEventListener("click", () => {
+        void applyBackgroundToCurrent();
+      });
+    }
 
     if (bgEngine) {
       bgEngine.addEventListener("change", () => {
