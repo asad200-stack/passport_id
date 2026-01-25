@@ -84,8 +84,8 @@
               <div class="controlRow">
                 <label class="label" for="bgEngine">Background</label>
                 <select id="bgEngine" class="select">
-                  <option value="removebg">Studio (remove.bg HD)</option>
-                  <option value="mediapipe" selected>Fast (On-device)</option>
+                  <option value="removebg" selected>Studio (remove.bg HD)</option>
+                  <option value="mediapipe">Fast (On-device, preview)</option>
                 </select>
               </div>
 
@@ -95,7 +95,8 @@
               </div>
 
               <div class="smallNote">
-                Studio mode gives the cleanest edges and pure white background. It requires your own remove.bg API key.
+                For embassy-grade results (natural hair edges + pure white background), use Studio mode.
+                Fast mode is a preview and may show cutout artifacts.
               </div>
             </div>
           </div>

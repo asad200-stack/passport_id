@@ -1152,6 +1152,12 @@
       if (savedEngine && bgEngine) bgEngine.value = savedEngine;
       const savedKey = localStorage.getItem(STORAGE.removebgKey);
       if (savedKey && removebgKey) removebgKey.value = savedKey;
+
+      // If user has a key and no explicit choice saved, default to Studio mode.
+      if ((!savedEngine || savedEngine === "mediapipe") && savedKey && bgEngine) {
+        bgEngine.value = savedEngine || "removebg";
+        if (!savedEngine) bgEngine.value = "removebg";
+      }
     } catch {
       // ignore
     }
