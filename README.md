@@ -15,6 +15,17 @@ A fast, studio-ready **passport & ID photo** web app built with **HTML + CSS + v
   - Quantity: **1 / 4 / 8 / 12**
   - Export: **JPG** or **PDF**
 
+## Best Background Quality (Studio Mode)
+
+For **embassy/government-grade edges** (no halos, no yellow outline), use:
+
+- **Background → Studio (remove.bg HD)**
+- Paste your **remove.bg API key** (saved locally in your browser)
+
+Notes:
+- This project is static-only; the key is stored in your browser (not on a server).
+- For production studio use, prefer a dedicated key and keep it private.
+
 ## File Structure
 
 - `index.html`

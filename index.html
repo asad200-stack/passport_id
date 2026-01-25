@@ -79,6 +79,25 @@
               <div class="outputBox__meta" id="photoMeta">—</div>
             </div>
             <canvas id="photoCanvas" class="canvas canvas--photo" width="413" height="531"></canvas>
+
+            <div class="controls controls--tight">
+              <div class="controlRow">
+                <label class="label" for="bgEngine">Background</label>
+                <select id="bgEngine" class="select">
+                  <option value="removebg">Studio (remove.bg HD)</option>
+                  <option value="mediapipe" selected>Fast (On-device)</option>
+                </select>
+              </div>
+
+              <div class="controlRow" id="apiKeyRow">
+                <label class="label" for="removebgKey">remove.bg Key</label>
+                <input id="removebgKey" class="input" type="password" placeholder="Paste API key (saved on this device)" />
+              </div>
+
+              <div class="smallNote">
+                Studio mode gives the cleanest edges and pure white background. It requires your own remove.bg API key.
+              </div>
+            </div>
           </div>
 
           <div class="outputBox">

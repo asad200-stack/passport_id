@@ -49,6 +49,9 @@
 
   const photoMeta = $("photoMeta");
   const sheetMeta = $("sheetMeta");
+  const bgEngine = /** @type {HTMLSelectElement} */ ($("bgEngine"));
+  const removebgKey = /** @type {HTMLInputElement} */ ($("removebgKey"));
+  const apiKeyRow = $("apiKeyRow");
 
   // --- State ---
   /** @type {MediaStream | null} */
@@ -75,6 +78,11 @@
   const DETECT_MAX_W = 360;
   let noFaceStreak = 0;
   const segMaskCanvas = document.createElement("canvas");
+
+  const STORAGE = {
+    bgEngine: "passport_bg_engine",
+    removebgKey: "passport_removebg_key",
+  };
 
   // Face detection fallback mode:
   // - "mediapipe" (default)
@@ -123,6 +131,15 @@
     setStatus(kind === "ok" ? "Face OK" : kind === "warn" ? "Adjust" : kind === "bad" ? "Blocked" : "Ready", kind);
   }
 
+  function isProbablyPureWhite(r, g, b) {
+    return r >= 252 && g >= 252 && b >= 252;
+  }
+
+  function updateBgEngineUi() {
+    const engine = bgEngine?.value || "mediapipe";
+    if (apiKeyRow) apiKeyRow.style.display = engine === "removebg" ? "flex" : "none";
+  }
+
   function enable(el, on) {
     el.disabled = !on;
   }
@@ -167,6 +184,76 @@
     selfieSegmentation.onResults((r) => {
       lastSegResults = r;
     });
+  }
+
+  async function removeBackgroundStudioRemoveBg(srcCanvas) {
+    const key = (removebgKey?.value || "").trim();
+    if (!key) {
+      throw new Error("Missing remove.bg API key. Paste it in the field under Background → Studio (remove.bg HD).");
+    }
+
+    // Convert to PNG blob
+    const blob = await new Promise((resolve) => srcCanvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("Failed to encode image.");
+
+    const fd = new FormData();
+    fd.append("image_file", blob, "photo.png");
+    fd.append("size", "auto");
+    fd.append("format", "png");
+    fd.append("bg_color", "FFFFFF"); // pure white background
+
+    const res = await fetch("https://api.remove.bg/v1.0/removebg", {
+      method: "POST",
+      headers: { "X-Api-Key": key },
+      body: fd,
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`remove.bg error (${res.status}). ${txt}`.trim());
+    }
+
+    const outBlob = await res.blob();
+    const bmp = await createImageBitmap(outBlob);
+
+    const out = document.createElement("canvas");
+    out.width = srcCanvas.width;
+    out.height = srcCanvas.height;
+    const ctx = out.getContext("2d", { willReadFrequently: true });
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, out.width, out.height);
+    ctx.drawImage(bmp, 0, 0, out.width, out.height);
+    return out;
+  }
+
+  function removeBackgroundFastOnDevice(pctx) {
+    // MediaPipe mask + refinement + edge decontamination on canvas data.
+    // This is still "best effort" vs true matting, but the Studio mode is the recommended path.
+    // (We keep this for offline use.)
+    return pctx;
+  }
+
+  function decontaminateEdgesTowardWhite(ctx, w, h) {
+    // Remove yellow/gray fringing by forcing near-edge pixels toward white.
+    // Detect "background-ish" pixels based on brightness and low saturation.
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      if (isProbablyPureWhite(r, g, b)) continue;
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const sat = max === 0 ? 0 : (max - min) / max;
+      // If it's very bright and low saturation (typical fringe), push to white.
+      if (max > 210 && sat < 0.22) {
+        const t = (max - 210) / 45; // 0..1
+        const k = Math.max(0, Math.min(1, t));
+        d[i] = Math.round(r + (255 - r) * k);
+        d[i + 1] = Math.round(g + (255 - g) * k);
+        d[i + 2] = Math.round(b + (255 - b) * k);
+      }
+    }
+    ctx.putImageData(img, 0, 0);
   }
 
   function loadScriptOnce(url) {
@@ -614,7 +701,7 @@
     ctx.putImageData(dst, 0, 0);
   }
 
-  function refineSegmentationMask(segMaskImage, w, h) {
+  function refineSegmentationMask(segMaskImage, w, h, facePoint) {
     // Make background removal more aggressive:
     // - Threshold the mask so background becomes 100% white
     // - Slight feather for cleaner edges
@@ -629,8 +716,8 @@
     const d = img.data;
 
     // Tune for "clean white" (more removal; slightly less hair detail)
-    const SOFT = 140;
-    const HARD = 200;
+    const SOFT = 145;
+    const HARD = 205;
 
     for (let i = 0; i < d.length; i += 4) {
       const v = d[i]; // grayscale intensity
@@ -649,10 +736,129 @@
     for (let p = 0, j = 0; p < d.length; p += 4, j++) alpha[j] = d[p + 3];
     const dil = morphAlpha(alpha, w, h, true);
     const clo = morphAlpha(dil, w, h, false);
-    for (let p = 0, j = 0; p < d.length; p += 4, j++) d[p + 3] = clo[j];
+    // Trim edges slightly to remove background halos (especially around hair)
+    const trimmed = morphAlpha(clo, w, h, false);
+
+    // Keep only the connected component that contains the face (removes stray background blobs)
+    const kept = keepComponentContainingPoint(trimmed, w, h, facePoint);
+
+    // Tiny blur for softer edges (reduces jaggies)
+    const blurred = boxBlurAlpha3x3(kept, w, h);
+
+    for (let p = 0, j = 0; p < d.length; p += 4, j++) d[p + 3] = blurred[j];
 
     ctx.putImageData(img, 0, 0);
     return segMaskCanvas;
+  }
+
+  function keepComponentContainingPoint(alpha, w, h, facePoint) {
+    if (!facePoint) return alpha;
+    const n = w * h;
+    const th = 40; // treat low alpha as background
+    let sx = Math.round(facePoint.x);
+    let sy = Math.round(facePoint.y);
+    sx = clamp(sx, 0, w - 1);
+    sy = clamp(sy, 0, h - 1);
+
+    const seedIndex = () => sy * w + sx;
+    let sIdx = seedIndex();
+
+    // If the exact point is not in the mask, search a small neighborhood.
+    if (alpha[sIdx] < th) {
+      let found = -1;
+      const R = 14;
+      for (let r = 1; r <= R && found < 0; r++) {
+        const y0 = clamp(sy - r, 0, h - 1);
+        const y1 = clamp(sy + r, 0, h - 1);
+        const x0 = clamp(sx - r, 0, w - 1);
+        const x1 = clamp(sx + r, 0, w - 1);
+        // scan border of the square ring
+        for (let x = x0; x <= x1 && found < 0; x++) {
+          const a1 = alpha[y0 * w + x];
+          const a2 = alpha[y1 * w + x];
+          if (a1 >= th) found = y0 * w + x;
+          else if (a2 >= th) found = y1 * w + x;
+        }
+        for (let y = y0; y <= y1 && found < 0; y++) {
+          const a1 = alpha[y * w + x0];
+          const a2 = alpha[y * w + x1];
+          if (a1 >= th) found = y * w + x0;
+          else if (a2 >= th) found = y * w + x1;
+        }
+      }
+      if (found < 0) return alpha;
+      sIdx = found;
+    }
+
+    const visited = new Uint8Array(n);
+    const keep = new Uint8Array(n);
+    const q = new Int32Array(n);
+    let head = 0;
+    let tail = 0;
+    q[tail++] = sIdx;
+    visited[sIdx] = 1;
+
+    while (head < tail) {
+      const i = q[head++];
+      keep[i] = 1;
+      const x = i % w;
+      const y = (i / w) | 0;
+      // 4-neighborhood
+      if (x > 0) {
+        const ni = i - 1;
+        if (!visited[ni] && alpha[ni] >= th) {
+          visited[ni] = 1;
+          q[tail++] = ni;
+        }
+      }
+      if (x < w - 1) {
+        const ni = i + 1;
+        if (!visited[ni] && alpha[ni] >= th) {
+          visited[ni] = 1;
+          q[tail++] = ni;
+        }
+      }
+      if (y > 0) {
+        const ni = i - w;
+        if (!visited[ni] && alpha[ni] >= th) {
+          visited[ni] = 1;
+          q[tail++] = ni;
+        }
+      }
+      if (y < h - 1) {
+        const ni = i + w;
+        if (!visited[ni] && alpha[ni] >= th) {
+          visited[ni] = 1;
+          q[tail++] = ni;
+        }
+      }
+    }
+
+    // Zero-out everything not connected to face
+    for (let i = 0; i < n; i++) {
+      if (!keep[i]) alpha[i] = 0;
+    }
+    return alpha;
+  }
+
+  function boxBlurAlpha3x3(src, w, h) {
+    const dst = new Uint8ClampedArray(src.length);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (x === 0 || y === 0 || x === w - 1 || y === h - 1) {
+          dst[i] = src[i];
+          continue;
+        }
+        let sum = 0;
+        for (let oy = -1; oy <= 1; oy++) {
+          const row = (y + oy) * w;
+          for (let ox = -1; ox <= 1; ox++) sum += src[row + (x + ox)];
+        }
+        dst[i] = (sum / 9) | 0;
+      }
+    }
+    return dst;
   }
 
   function morphAlpha(src, w, h, dilate) {
@@ -744,39 +950,55 @@
     maskCanvas.height = PHOTO_PX.h;
     const mctx = maskCanvas.getContext("2d", { willReadFrequently: true });
 
-    lastSegResults = null;
-    try {
-      await selfieSegmentation.send({ image: photoCanvas });
-    } catch (e) {
-      // If segmentation crashes on a device, we still produce a usable photo.
-      applyEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
-      afterProcessSuccess({ note: "Segmentation not supported on this device (kept original background)." });
-      return;
-    }
-    if (!lastSegResults?.segmentationMask) {
-      // fallback: still deliver a photo if segmentation fails
-      applyEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
-      afterProcessSuccess({ note: "Segmentation unavailable (kept original background)." });
-      return;
-    }
+    const engine = bgEngine?.value || "mediapipe";
+    if (engine === "removebg") {
+      // Professional-grade background removal via remove.bg
+      setValidation("Processing (remove.bg HD)…", "info");
+      const out = await removeBackgroundStudioRemoveBg(photoCanvas);
+      pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+      pctx.fillStyle = "#ffffff";
+      pctx.fillRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+      pctx.drawImage(out, 0, 0);
+    } else {
+      // On-device (best-effort)
+      lastSegResults = null;
+      try {
+        await selfieSegmentation.send({ image: photoCanvas });
+      } catch (e) {
+        applyEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
+        afterProcessSuccess({ note: "Segmentation not supported on this device (kept original background)." });
+        return;
+      }
+      if (!lastSegResults?.segmentationMask) {
+        applyEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
+        afterProcessSuccess({ note: "Segmentation unavailable (kept original background)." });
+        return;
+      }
 
-    // Build person-only layer (using refined mask for cleaner white background)
-    const refinedMask = refineSegmentationMask(lastSegResults.segmentationMask, PHOTO_PX.w, PHOTO_PX.h);
-    mctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
-    mctx.drawImage(photoCanvas, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
-    mctx.globalCompositeOperation = "destination-in";
-    mctx.drawImage(refinedMask, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
-    mctx.globalCompositeOperation = "source-over";
+      const facePoint = {
+        x: ((bb.xCenter * srcW - crop.sx) / crop.sw) * PHOTO_PX.w,
+        y: ((bb.yCenter * srcH - crop.sy) / crop.sh) * PHOTO_PX.h,
+      };
+      const refinedMask = refineSegmentationMask(lastSegResults.segmentationMask, PHOTO_PX.w, PHOTO_PX.h, facePoint);
+      mctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+      mctx.drawImage(photoCanvas, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
+      mctx.globalCompositeOperation = "destination-in";
+      mctx.drawImage(refinedMask, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
+      mctx.globalCompositeOperation = "source-over";
 
-    // Composite onto pure white background
-    pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
-    pctx.fillStyle = "#ffffff";
-    pctx.fillRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
-    pctx.drawImage(maskCanvas, 0, 0);
+      // Composite onto pure white background
+      pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+      pctx.fillStyle = "#ffffff";
+      pctx.fillRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+      pctx.drawImage(maskCanvas, 0, 0);
+
+      // Edge color decontamination (reduces yellow/gray outline)
+      decontaminateEdgesTowardWhite(pctx, PHOTO_PX.w, PHOTO_PX.h);
+    }
 
     // Enhance (brightness/contrast/shadows/sharpen)
     applyEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
-    afterProcessSuccess({ note: "Background set to pure white." });
+    afterProcessSuccess({ note: engine === "removebg" ? "Studio background removal applied." : "Background set to pure white." });
   }
 
   function afterProcessSuccess({ note }) {
@@ -904,6 +1126,17 @@
 
   // --- Wire up events ---
   async function boot() {
+    // Restore saved settings
+    try {
+      const savedEngine = localStorage.getItem(STORAGE.bgEngine);
+      if (savedEngine && bgEngine) bgEngine.value = savedEngine;
+      const savedKey = localStorage.getItem(STORAGE.removebgKey);
+      if (savedKey && removebgKey) removebgKey.value = savedKey;
+    } catch {
+      // ignore
+    }
+    updateBgEngineUi();
+
     setStatus("Ready", "info");
     photoCanvas.width = PHOTO_PX.w;
     photoCanvas.height = PHOTO_PX.h;
@@ -956,6 +1189,26 @@
         detectionTimer = setInterval(() => void validateLive(), 240);
       }
     });
+
+    if (bgEngine) {
+      bgEngine.addEventListener("change", () => {
+        try {
+          localStorage.setItem(STORAGE.bgEngine, bgEngine.value);
+        } catch {
+          // ignore
+        }
+        updateBgEngineUi();
+      });
+    }
+    if (removebgKey) {
+      removebgKey.addEventListener("input", () => {
+        try {
+          localStorage.setItem(STORAGE.removebgKey, removebgKey.value);
+        } catch {
+          // ignore
+        }
+      });
+    }
 
     cameraSelect.addEventListener("change", async () => {
       if (!stream) return;

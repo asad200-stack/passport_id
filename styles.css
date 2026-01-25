@@ -169,6 +169,17 @@ body{
 }
 .select:disabled{opacity:.55}
 
+.input{
+  flex:1;
+  min-width: 180px;
+  padding:10px 12px;
+  border-radius: 12px;
+  border:1px solid var(--line);
+  background: #ffffff;
+  color:var(--text);
+  outline:none;
+}
+
 .btn{
   appearance:none;
   border: 1px solid var(--line);
