@@ -5,6 +5,7 @@ A fast, studio-ready **passport & ID photo** web app built with **HTML + CSS + v
 ## Features
 
 - **Live camera preview** (getUserMedia)
+- **Upload Image** (process external photos the same way)
 - **35×45 overlay + face guide**
 - **Mandatory face validation** (blocks capture if no face / bad distance)
 - **Automatic processing**
@@ -14,6 +15,7 @@ A fast, studio-ready **passport & ID photo** web app built with **HTML + CSS + v
 - **Print sheet generator (A4 @ 300 DPI)**
   - Quantity: **1 / 4 / 8 / 12**
   - Export: **JPG** or **PDF**
+  - **Top-left layout** (saves paper for second batch)
 
 ## Best Background Quality (Studio Mode)
 
@@ -55,9 +57,9 @@ Camera access requires HTTPS or localhost.
 
 Key values are in `app.js`:
 
-- Output DPI: `OUTPUT_DPI` (default 300)
+- Sheet DPI: `SHEET_DPI` (default 300)
+- Photo DPI: `PHOTO_DPI` (default 450)
 - Photo size: `PHOTO_MM` (default 35×45)
-- Face distance thresholds: `TOO_FAR` / `TOO_CLOSE` in `validateFromFaceResults()`
 
 ## Demo Link
 
@@ -65,26 +67,7 @@ After deploying on GitHub Pages, paste your live URL here:
 
 - `https://<username>.github.io/<repo>/`
 
-# AI Passport & ID Photo (Mobile)
+# Notes
 
-## Run (from this folder)
-
-1) Install:
-
-```bash
-npm run install:client
-```
-
-2) Start dev server:
-
-```bash
-npm run dev
-```
-
-Then open the shown local URL.
-
-## Notes
-
-- The app code is in `client/`.
-- If you previously ran a different project, stop it with **Ctrl+C** then run the commands above from this folder.
-
+- Camera access requires HTTPS (GitHub Pages is OK).
+- For best background quality, use **Studio (remove.bg HD)**.

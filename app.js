@@ -34,6 +34,8 @@
   const btnStop = /** @type {HTMLButtonElement} */ ($("btnStop"));
   const btnCapture = /** @type {HTMLButtonElement} */ ($("btnCapture"));
   const btnRetake = /** @type {HTMLButtonElement} */ ($("btnRetake"));
+  const btnUpload = /** @type {HTMLButtonElement} */ ($("btnUpload"));
+  const fileInput = /** @type {HTMLInputElement} */ ($("fileInput"));
   const validationMsg = $("validationMsg");
   const statusPill = $("statusPill");
   const cameraHint = $("cameraHint");
@@ -1040,70 +1042,65 @@
     workCanvas.height = srcH;
     const wctx = workCanvas.getContext("2d", { willReadFrequently: true });
     wctx.drawImage(video, 0, 0, srcW, srcH);
+    await processSourceCanvas(workCanvas);
+  }
 
-    // Re-run detection on captured frame for stable bbox.
+  async function processSourceCanvas(srcCanvas) {
+    const srcW = srcCanvas.width;
+    const srcH = srcCanvas.height;
+
+    // Detect face (required for correct crop)
     let bb;
     try {
-      bb = await detectNormFaceBox(workCanvas);
+      bb = await detectNormFaceBox(srcCanvas);
     } catch (e) {
       if (faceMode === "mediapipe" && isMpAbortError(e)) {
         mpFaceBroken = true;
         await ensureFaceFallbackReady();
-        bb = await detectNormFaceBox(workCanvas);
+        bb = await detectNormFaceBox(srcCanvas);
       } else {
         throw e;
       }
     }
+
     const v = validateFromNormBox(bb);
     if (!v.ok) {
-      setValidation(`Capture blocked: ${v.msg}`, v.kind === "warn" ? "warn" : "bad");
-      // Resume live validation
-      detectionTimer = setInterval(() => void validateLive(), 240);
+      setValidation(`Blocked: ${v.msg}`, v.kind === "warn" ? "warn" : "bad");
+      // Resume live validation only if camera is running
+      if (stream && !detectionTimer) detectionTimer = setInterval(() => void validateLive(), 240);
       return;
     }
 
     const crop = computeCropRectFromFace(bb, srcW, srcH);
 
-    // Crop into a canvas that matches passport output pixels
-    photoCanvas.width = PHOTO_PX.w;
-    photoCanvas.height = PHOTO_PX.h;
-    const pctx = photoCanvas.getContext("2d", { willReadFrequently: true });
-    pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
-    pctx.imageSmoothingEnabled = true;
-    pctx.imageSmoothingQuality = "high";
-    // Draw into raw canvas first (unprocessed base)
+    // Build RAW crop
     rawPhotoCanvas.width = PHOTO_PX.w;
     rawPhotoCanvas.height = PHOTO_PX.h;
     const rctx = rawPhotoCanvas.getContext("2d", { willReadFrequently: true });
     rctx.imageSmoothingEnabled = true;
     rctx.imageSmoothingQuality = "high";
     rctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
-    rctx.drawImage(workCanvas, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
+    rctx.drawImage(srcCanvas, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
+
+    // Copy RAW into visible photo canvas
+    photoCanvas.width = PHOTO_PX.w;
+    photoCanvas.height = PHOTO_PX.h;
+    const pctx = photoCanvas.getContext("2d", { willReadFrequently: true });
+    pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+    pctx.drawImage(rawPhotoCanvas, 0, 0);
+
     hasRawPhoto = true;
     updateBgEngineUi();
-    // Persist raw photo for this browser session so Apply Background works after refresh.
+
+    // Persist RAW in this browser session so Apply Background remains clickable
     try {
       const dataUrl = rawPhotoCanvas.toDataURL("image/jpeg", 0.95);
       sessionStorage.setItem(STORAGE.rawPhoto, dataUrl);
     } catch {
       // ignore
     }
-    // Copy raw into output canvas (will be processed)
-    pctx.drawImage(rawPhotoCanvas, 0, 0);
 
-    // Segmentation (remove background -> white)
-    maskCanvas.width = PHOTO_PX.w;
-    maskCanvas.height = PHOTO_PX.h;
-    const mctx = maskCanvas.getContext("2d", { willReadFrequently: true });
-
-    const engine = bgEngine?.value || "mediapipe";
-    // Apply background based on selected engine (and show errors if it fails)
-    try {
-      await applyBackgroundToCurrent();
-    } catch {
-      // applyBackgroundToCurrent already reports errors
-    }
-    return;
+    await applyBackgroundToCurrent();
   }
 
   function afterProcessSuccess({ note }) {
@@ -1162,8 +1159,9 @@
       gridH = rows * photoH + (rows - 1) * gap;
     }
 
-    const startX = (targetW - gridW) / 2;
-    const startY = (targetH - gridH) / 2;
+    // Start from top-left so remaining paper can be reused.
+    const startX = margin;
+    const startY = margin;
 
     // Draw photos
     ctx.save();
@@ -1291,8 +1289,7 @@
     });
 
     btnRetake.addEventListener("click", () => {
-      // Resume live validation after retake
-      if (!stream) return;
+      // Clear current output (works for camera + upload)
       enable(btnDownloadJpg, false);
       enable(btnDownloadPdf, false);
       enable(qtySelect, false);
@@ -1305,15 +1302,64 @@
       } catch {
         // ignore
       }
-      setValidation("Detecting face…", "info");
-      if (!detectionTimer) {
-        detectionTimer = setInterval(() => void validateLive(), 240);
+      if (stream) {
+        setValidation("Detecting face…", "info");
+        if (!detectionTimer) detectionTimer = setInterval(() => void validateLive(), 240);
+      } else {
+        setValidation("Cleared. Upload an image or start camera.", "info");
       }
     });
 
     if (btnApplyBg) {
       btnApplyBg.addEventListener("click", () => {
         void applyBackgroundToCurrent();
+      });
+    }
+
+    if (btnUpload && fileInput) {
+      btnUpload.addEventListener("click", () => fileInput.click());
+      fileInput.addEventListener("change", async () => {
+        const file = fileInput.files?.[0];
+        if (!file) return;
+        setStatus("Processing…", "info");
+        setValidation("Loading image…", "info");
+
+        // Stop camera to avoid confusion
+        stopCamera();
+        enable(btnRetake, true);
+
+        try {
+          let bmp;
+          try {
+            bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+          } catch {
+            bmp = await createImageBitmap(file);
+          }
+
+          // Scale to a safe working size (keep quality, avoid memory spikes)
+          const maxSide = 2200;
+          const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+          const w = Math.max(1, Math.round(bmp.width * scale));
+          const h = Math.max(1, Math.round(bmp.height * scale));
+
+          workCanvas.width = w;
+          workCanvas.height = h;
+          const ctx = workCanvas.getContext("2d", { willReadFrequently: true });
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.clearRect(0, 0, w, h);
+          ctx.drawImage(bmp, 0, 0, w, h);
+
+          await initModelsOnce();
+          await processSourceCanvas(workCanvas);
+        } catch (e) {
+          const msg = String(e?.message || e || "Upload failed");
+          setValidation(`Upload failed: ${msg}`, "bad");
+          setStatus("Blocked", "bad");
+        } finally {
+          // allow uploading same file again
+          fileInput.value = "";
+        }
       });
     }
 
