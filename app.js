@@ -1114,12 +1114,12 @@
 
   // --- Sheet generation ---
   function gridForQty(qty) {
-    if (qty === 1) return { cols: 1, rows: 1 };
-    if (qty === 4) return { cols: 2, rows: 2 };
-    if (qty === 8) return { cols: 2, rows: 4 };
-    if (qty === 12) return { cols: 3, rows: 4 };
-    // fallback
-    return { cols: 2, rows: Math.max(1, Math.ceil(qty / 2)) };
+    // Studio cutting-friendly layout:
+    // - Up to 4 photos per row (same line)
+    // - Then wrap to next row (8 => 4x2, 12 => 4x3)
+    const cols = Math.max(1, Math.min(4, qty));
+    const rows = Math.max(1, Math.ceil(qty / cols));
+    return { cols, rows };
   }
 
   function renderSheet(targetCanvas, targetW, targetH, qty) {
@@ -1139,10 +1139,11 @@
     // Keep real-world sizes correct for A4@300DPI (even if photo crop is rendered at higher DPI).
     const photoW = PHOTO_SHEET_PX.w * scale;
     const photoH = PHOTO_SHEET_PX.h * scale;
-    const margin = 10 * (SHEET_DPI / MM_PER_INCH) * scale; // ~10mm in px scaled
+    // Tighter layout for paper saving + easier cutting
+    const margin = 5 * (SHEET_DPI / MM_PER_INCH) * scale; // ~5mm
 
     const { cols, rows } = gridForQty(qty);
-    let gap = 7 * (SHEET_DPI / MM_PER_INCH) * scale; // ~7mm
+    let gap = 3 * (SHEET_DPI / MM_PER_INCH) * scale; // ~3mm (closer together)
 
     let gridW = cols * photoW + (cols - 1) * gap;
     let gridH = rows * photoH + (rows - 1) * gap;
@@ -1163,12 +1164,8 @@
     const startX = margin;
     const startY = margin;
 
-    // Draw photos
+    // Draw photos (no shadows — cleaner for cutting)
     ctx.save();
-    ctx.shadowColor = "rgba(0,0,0,.10)";
-    ctx.shadowBlur = 8 * scale;
-    ctx.shadowOffsetY = 3 * scale;
-
     const stroke = Math.max(1, Math.round(1.2 * scale));
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
@@ -1177,11 +1174,9 @@
         const x = startX + c * (photoW + gap);
         const y = startY + r * (photoH + gap);
         ctx.drawImage(photoCanvas, x, y, photoW, photoH);
-        ctx.shadowColor = "transparent";
         ctx.lineWidth = stroke;
         ctx.strokeStyle = "rgba(0,0,0,.18)";
         ctx.strokeRect(x, y, photoW, photoH);
-        ctx.shadowColor = "rgba(0,0,0,.10)";
       }
     }
     ctx.restore();
