@@ -1143,7 +1143,7 @@
     const margin = 5 * (SHEET_DPI / MM_PER_INCH) * scale; // ~5mm
 
     const { cols, rows } = gridForQty(qty);
-    let gap = 3 * (SHEET_DPI / MM_PER_INCH) * scale; // ~3mm (closer together)
+    let gap = 1 * (SHEET_DPI / MM_PER_INCH) * scale; // ~1mm (very close for easy cutting)
 
     let gridW = cols * photoW + (cols - 1) * gap;
     let gridH = rows * photoH + (rows - 1) * gap;
@@ -1152,11 +1152,11 @@
     const maxW = targetW - margin * 2;
     const maxH = targetH - margin * 2;
     if (gridW > maxW && cols > 1) {
-      gap = Math.max(2 * scale, (maxW - cols * photoW) / (cols - 1));
+      gap = Math.max(1 * scale, (maxW - cols * photoW) / (cols - 1));
       gridW = cols * photoW + (cols - 1) * gap;
     }
     if (gridH > maxH && rows > 1) {
-      gap = Math.max(2 * scale, Math.min(gap, (maxH - rows * photoH) / (rows - 1)));
+      gap = Math.max(1 * scale, Math.min(gap, (maxH - rows * photoH) / (rows - 1)));
       gridH = rows * photoH + (rows - 1) * gap;
     }
 
