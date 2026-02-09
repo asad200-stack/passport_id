@@ -17,6 +17,11 @@
   const A4_MM = { w: 210, h: 297 };
   const PHOTO_MM = { w: 35, h: 45 };
   const PHOTO_AR = PHOTO_MM.w / PHOTO_MM.h; // 35:45
+  const SHEET_LAYOUT = {
+    maxCols: 5, // user requested: 5 photos per row
+    marginMm: 5,
+    gapMm: 1,
+  };
 
   const pxFromMm = (mm, dpi) => Math.round((mm / MM_PER_INCH) * dpi);
   const PHOTO_PX = { w: pxFromMm(PHOTO_MM.w, PHOTO_DPI), h: pxFromMm(PHOTO_MM.h, PHOTO_DPI) };
@@ -40,7 +45,7 @@
   const statusPill = $("statusPill");
   const cameraHint = $("cameraHint");
 
-  const qtySelect = /** @type {HTMLSelectElement} */ ($("qty"));
+  const qtyInput = /** @type {HTMLInputElement} */ ($("qty"));
   const btnDownloadJpg = /** @type {HTMLButtonElement} */ ($("btnDownloadJpg"));
   const btnDownloadPdf = /** @type {HTMLButtonElement} */ ($("btnDownloadPdf"));
 
@@ -671,6 +676,28 @@
     return Math.max(a, Math.min(b, n));
   }
 
+  function maxQtyForA4() {
+    // Conservative physical fit calculation (in mm).
+    const usableW = A4_MM.w - 2 * SHEET_LAYOUT.marginMm;
+    const usableH = A4_MM.h - 2 * SHEET_LAYOUT.marginMm;
+    const cols = Math.max(
+      1,
+      Math.min(SHEET_LAYOUT.maxCols, Math.floor((usableW + SHEET_LAYOUT.gapMm) / (PHOTO_MM.w + SHEET_LAYOUT.gapMm))),
+    );
+    const rows = Math.max(1, Math.floor((usableH + SHEET_LAYOUT.gapMm) / (PHOTO_MM.h + SHEET_LAYOUT.gapMm)));
+    return cols * rows;
+  }
+
+  const MAX_QTY_A4 = maxQtyForA4(); // typically 30 (5x6) for 35x45 on A4
+
+  function getQtyClamped() {
+    const raw = parseInt(qtyInput?.value || "12", 10);
+    const n = Number.isFinite(raw) ? raw : 12;
+    const clamped = clamp(n, 1, MAX_QTY_A4);
+    if (qtyInput && String(clamped) !== String(qtyInput.value)) qtyInput.value = String(clamped);
+    return clamped;
+  }
+
   function computeCropRectFromFace(normFaceBox, srcW, srcH) {
     // Estimate crop height based on face box (bbox is roughly face region).
     // For passport photos, face region should occupy ~55% of photo height (heuristic).
@@ -1106,7 +1133,7 @@
   function afterProcessSuccess({ note }) {
     photoMeta.textContent = `${PHOTO_MM.w}×${PHOTO_MM.h}mm • ${PHOTO_PX.w}×${PHOTO_PX.h}px @ ${PHOTO_DPI}DPI`;
     setValidation(`Done. ${note}`, "ok");
-    enable(qtySelect, true);
+    enable(qtyInput, true);
     enable(btnDownloadJpg, true);
     enable(btnDownloadPdf, true);
     renderSheetAll();
@@ -1114,10 +1141,10 @@
 
   // --- Sheet generation ---
   function gridForQty(qty) {
-    // Studio cutting-friendly layout:
-    // - Up to 4 photos per row (same line)
-    // - Then wrap to next row (8 => 4x2, 12 => 4x3)
-    const cols = Math.max(1, Math.min(4, qty));
+    // Cutting-friendly layout:
+    // - Up to 5 photos per row (requested)
+    // - Then wrap to next row
+    const cols = Math.max(1, Math.min(SHEET_LAYOUT.maxCols, qty));
     const rows = Math.max(1, Math.ceil(qty / cols));
     return { cols, rows };
   }
@@ -1140,10 +1167,10 @@
     const photoW = PHOTO_SHEET_PX.w * scale;
     const photoH = PHOTO_SHEET_PX.h * scale;
     // Tighter layout for paper saving + easier cutting
-    const margin = 5 * (SHEET_DPI / MM_PER_INCH) * scale; // ~5mm
+    const margin = SHEET_LAYOUT.marginMm * (SHEET_DPI / MM_PER_INCH) * scale; // mm -> px
 
     const { cols, rows } = gridForQty(qty);
-    let gap = 1 * (SHEET_DPI / MM_PER_INCH) * scale; // ~1mm (very close for easy cutting)
+    let gap = SHEET_LAYOUT.gapMm * (SHEET_DPI / MM_PER_INCH) * scale; // mm -> px
 
     let gridW = cols * photoW + (cols - 1) * gap;
     let gridH = rows * photoH + (rows - 1) * gap;
@@ -1183,7 +1210,7 @@
   }
 
   function renderSheetAll() {
-    const qty = parseInt(qtySelect.value, 10);
+    const qty = getQtyClamped();
     // Full-res render
     renderSheet(sheetCanvasFull, SHEET_PX.w, SHEET_PX.h, qty);
     // Preview render
@@ -1205,14 +1232,14 @@
   }
 
   function exportJpg() {
-    const qty = parseInt(qtySelect.value, 10);
+    const qty = getQtyClamped();
     const name = `passport_sheet_${nowStamp()}_x${qty}.jpg`;
     const dataUrl = sheetCanvasFull.toDataURL("image/jpeg", 0.95);
     downloadDataUrl(dataUrl, name);
   }
 
   function exportPdf() {
-    const qty = parseInt(qtySelect.value, 10);
+    const qty = getQtyClamped();
     const name = `passport_sheet_${nowStamp()}_x${qty}.pdf`;
     const dataUrl = sheetCanvasFull.toDataURL("image/jpeg", 0.95);
 
@@ -1253,6 +1280,13 @@
     sctx.fillStyle = "#ffffff";
     sctx.fillRect(0, 0, sheetCanvasPreview.width, sheetCanvasPreview.height);
 
+    // Quantity input constraints (A4 capacity)
+    if (qtyInput) {
+      qtyInput.min = "1";
+      qtyInput.max = String(MAX_QTY_A4);
+      if (!qtyInput.value) qtyInput.value = "12";
+    }
+
     // Restore last captured photo (if any) so Apply Background is clickable after refresh.
     await restoreRawPhotoFromSession();
 
@@ -1287,7 +1321,7 @@
       // Clear current output (works for camera + upload)
       enable(btnDownloadJpg, false);
       enable(btnDownloadPdf, false);
-      enable(qtySelect, false);
+      enable(qtyInput, false);
       photoMeta.textContent = "—";
       sheetMeta.textContent = "—";
       hasRawPhoto = false;
@@ -1387,7 +1421,10 @@
       }
     });
 
-    qtySelect.addEventListener("change", () => renderSheetAll());
+    if (qtyInput) {
+      qtyInput.addEventListener("input", () => renderSheetAll());
+      qtyInput.addEventListener("change", () => renderSheetAll());
+    }
     btnDownloadJpg.addEventListener("click", () => exportJpg());
     btnDownloadPdf.addEventListener("click", () => exportPdf());
 

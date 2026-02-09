@@ -1,0 +1,68 @@
+[debug] [2026-02-09T08:38:01.155Z] ----------------------------------------------------------------------
+[debug] [2026-02-09T08:38:01.159Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\asad2\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js deploy
+[debug] [2026-02-09T08:38:01.159Z] CLI Version:   15.5.1
+[debug] [2026-02-09T08:38:01.160Z] Platform:      win32
+[debug] [2026-02-09T08:38:01.160Z] Node Version:  v22.20.0
+[debug] [2026-02-09T08:38:01.160Z] Time:          Mon Feb 09 2026 10:38:01 GMT+0200 (Eastern European Standard Time)
+[debug] [2026-02-09T08:38:01.160Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-02-09T08:38:03.896Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-02-09T08:38:03.896Z] > authorizing via signed-in user (asad28486@gmail.com)
+[debug] [2026-02-09T08:38:03.897Z] [iam] checking project pos-catch for permissions ["firebase.projects.get","firebasehosting.sites.update"]
+[debug] [2026-02-09T08:38:03.898Z] Checked if tokens are valid: true, expires at: 1770629202500
+[debug] [2026-02-09T08:38:03.898Z] Checked if tokens are valid: true, expires at: 1770629202500
+[debug] [2026-02-09T08:38:03.899Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/pos-catch:testIamPermissions [none]
+[debug] [2026-02-09T08:38:03.899Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/pos-catch:testIamPermissions  x-goog-user-project=pos-catch
+[debug] [2026-02-09T08:38:03.899Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/pos-catch:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-02-09T08:38:05.384Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/pos-catch:testIamPermissions 200
+[debug] [2026-02-09T08:38:05.384Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/pos-catch:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-02-09T08:38:05.384Z] Checked if tokens are valid: true, expires at: 1770629202500
+[debug] [2026-02-09T08:38:05.385Z] Checked if tokens are valid: true, expires at: 1770629202500
+[debug] [2026-02-09T08:38:05.385Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/pos-catch [none]
+[debug] [2026-02-09T08:38:06.359Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/pos-catch 200
+[debug] [2026-02-09T08:38:06.359Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/pos-catch {"projectId":"pos-catch","projectNumber":"891436013106","displayName":"pos-catch","name":"projects/pos-catch","resources":{"hostingSite":"pos-catch"},"state":"ACTIVE","etag":"1_cf7b5f8b-ac5a-4515-bffc-1bdcf23e700a"}
+[info] 
+[info] === Deploying to 'pos-catch'...
+[info] 
+[info] i  deploying hosting 
+[debug] [2026-02-09T08:38:06.369Z] Checked if tokens are valid: true, expires at: 1770629202500
+[debug] [2026-02-09T08:38:06.369Z] Checked if tokens are valid: true, expires at: 1770629202500
+[debug] [2026-02-09T08:38:06.369Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/pos-catch/versions [none]
+[debug] [2026-02-09T08:38:06.369Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/pos-catch/versions {"status":"CREATED","labels":{"deployment-tool":"cli-firebase"}}
+[debug] [2026-02-09T08:38:08.709Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/pos-catch/versions 200
+[debug] [2026-02-09T08:38:08.709Z] <<< [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/pos-catch/versions {"name":"projects/891436013106/sites/pos-catch/versions/872a52748825656d","status":"CREATED","config":{},"labels":{"deployment-tool":"cli-firebase"}}
+[info] i  hosting[pos-catch]: beginning deploy... 
+[info] i  hosting[pos-catch]: found 2 files in public 
+[debug] [2026-02-09T08:38:08.731Z] [hosting] uploading with 200 concurrency
+[debug] [2026-02-09T08:38:08.737Z] Checked if tokens are valid: true, expires at: 1770629202500
+[debug] [2026-02-09T08:38:08.737Z] Checked if tokens are valid: true, expires at: 1770629202500
+[debug] [2026-02-09T08:38:08.738Z] [hosting] hash cache [cHVibGlj] stored for 2 files
+[debug] [2026-02-09T08:38:08.738Z] [hosting][hash queue][FINAL] {"max":0,"min":0,"avg":0,"active":0,"complete":2,"success":2,"errored":0,"retried":0,"total":2,"elapsed":3}
+[debug] [2026-02-09T08:38:08.739Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/891436013106/sites/pos-catch/versions/872a52748825656d:populateFiles [none]
+[debug] [2026-02-09T08:38:08.739Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/891436013106/sites/pos-catch/versions/872a52748825656d:populateFiles {"files":{"/index.html":"617d7027655486348f5e5e44dfa9ad461329ab8dd84515aff4245d5a28e03041","/404.html":"762bf484ba67404bd1a3b181546ea28d60dfddf18e9dd4795d8d25bcf3c1a890"}}
+[debug] [2026-02-09T08:38:09.466Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/891436013106/sites/pos-catch/versions/872a52748825656d:populateFiles 200
+[debug] [2026-02-09T08:38:09.466Z] <<< [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/891436013106/sites/pos-catch/versions/872a52748825656d:populateFiles {"uploadUrl":"https://upload-firebasehosting.googleapis.com/upload/sites/pos-catch/versions/872a52748825656d/files"}
+[debug] [2026-02-09T08:38:09.466Z] [hosting][populate queue][FINAL] {"max":730,"min":730,"avg":730,"active":0,"complete":1,"success":1,"errored":0,"retried":0,"total":1,"elapsed":730}
+[debug] [2026-02-09T08:38:09.466Z] [hosting] uploads queued: 0
+[debug] [2026-02-09T08:38:09.467Z] [hosting][upload queue][FINAL] {"max":0,"min":9999999999,"avg":0,"active":0,"complete":0,"success":0,"errored":0,"retried":0,"total":0,"elapsed":1770626289467}
+[info] +  hosting[pos-catch]: file upload complete 
+[debug] [2026-02-09T08:38:09.469Z] [hosting] deploy completed after 754ms
+[debug] [2026-02-09T08:38:09.469Z] [
+  {
+    "config": {
+      "public": "public",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "site": "pos-catch"
+    },
+    "version": "projects/891436013106/sites/pos-catch/versions/872a52748825656d"
+  }
+]
+[info] i  hosting[pos-catch]: finalizing version... 
+[debug] [2026-02-09T08:38:09.471Z] Checked if tokens are valid: true, expires at: 1770629202500
+[debug] [2026-02-09T08:38:09.472Z] Checked if tokens are valid: true, expires at: 1770629202500
+[debug] [2026-02-09T08:38:09.472Z] >>> [apiv2][query] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/pos-catch/versions/872a52748825656d updateMask=status%2Cconfig
+[debug] [2026-02-09T08:38:09.472Z] >>> [apiv2][body] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/pos-catch/versions/872a52748825656d {"status":"FINALIZED","config":{}}

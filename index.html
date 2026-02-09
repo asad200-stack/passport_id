@@ -120,12 +120,17 @@
             <div class="controls controls--tight">
               <div class="controlRow">
                 <label class="label" for="qty">Quantity</label>
-                <select id="qty" class="select" disabled>
-                  <option value="1">1</option>
-                  <option value="4" selected>4</option>
-                  <option value="8">8</option>
-                  <option value="12">12</option>
-                </select>
+                <input
+                  id="qty"
+                  class="input"
+                  type="number"
+                  inputmode="numeric"
+                  min="1"
+                  max="30"
+                  step="1"
+                  value="12"
+                  disabled
+                />
               </div>
 
               <div class="controlRow">
