@@ -114,6 +114,9 @@
   sheetCanvasFull.width = SHEET_PX.w;
   sheetCanvasFull.height = SHEET_PX.h;
 
+  // Track last valid quantity so empty typing doesn't "snap" instantly.
+  let lastGoodQty = 12;
+
   // --- UI helpers ---
   function setStatus(text, kind = "info") {
     statusPill.textContent = text;
@@ -330,6 +333,29 @@
     } catch (e) {
       // Surface errors (CORS, invalid key, quota)
       const msg = String(e?.message || e || "Unknown error");
+      // If remove.bg credits are insufficient, auto-fallback to on-device mode.
+      if (engine === "removebg") {
+        const lower = msg.toLowerCase();
+        const isInsufficientCredits =
+          lower.includes("insufficient_credits") || lower.includes("insufficient credits") || lower.includes("402");
+        if (isInsufficientCredits && bgEngine) {
+          try {
+            bgEngine.value = "mediapipe";
+            try {
+              localStorage.setItem(STORAGE.bgEngine, bgEngine.value);
+            } catch {
+              // ignore
+            }
+            updateBgEngineUi();
+            setValidation("remove.bg credits انتهوا. رح نكمّل على Fast (On-device).", "warn");
+            await applyBackgroundToCurrent();
+            return;
+          } catch {
+            // fall through to error UI
+          }
+        }
+      }
+
       setValidation(`Background apply failed: ${msg}`, "bad");
       setStatus("Blocked", "bad");
     }
@@ -690,12 +716,32 @@
 
   const MAX_QTY_A4 = maxQtyForA4(); // typically 30 (5x6) for 35x45 on A4
 
-  function getQtyClamped() {
-    const raw = parseInt(qtyInput?.value || "12", 10);
-    const n = Number.isFinite(raw) ? raw : 12;
-    const clamped = clamp(n, 1, MAX_QTY_A4);
-    if (qtyInput && String(clamped) !== String(qtyInput.value)) qtyInput.value = String(clamped);
-    return clamped;
+  function parseQtyLenient() {
+    const s = String(qtyInput?.value ?? "").trim();
+    if (!s) return null; // allow empty while typing
+    const n = Number(s);
+    if (!Number.isFinite(n)) return null;
+    return Math.trunc(n);
+  }
+
+  function clampQty(n) {
+    return clamp(n, 1, MAX_QTY_A4);
+  }
+
+  function getQtyForRender() {
+    const n = parseQtyLenient();
+    if (n == null) return null;
+    const q = clampQty(n);
+    lastGoodQty = q;
+    return q;
+  }
+
+  function normalizeQtyInInput() {
+    const n = parseQtyLenient();
+    const q = clampQty(n == null ? lastGoodQty : n);
+    lastGoodQty = q;
+    if (qtyInput) qtyInput.value = String(q);
+    return q;
   }
 
   function computeCropRectFromFace(normFaceBox, srcW, srcH) {
@@ -1210,7 +1256,8 @@
   }
 
   function renderSheetAll() {
-    const qty = getQtyClamped();
+    const qty = getQtyForRender();
+    if (qty == null) return; // don't snap while user is clearing/typing
     // Full-res render
     renderSheet(sheetCanvasFull, SHEET_PX.w, SHEET_PX.h, qty);
     // Preview render
@@ -1232,14 +1279,14 @@
   }
 
   function exportJpg() {
-    const qty = getQtyClamped();
+    const qty = normalizeQtyInInput();
     const name = `passport_sheet_${nowStamp()}_x${qty}.jpg`;
     const dataUrl = sheetCanvasFull.toDataURL("image/jpeg", 0.95);
     downloadDataUrl(dataUrl, name);
   }
 
   function exportPdf() {
-    const qty = getQtyClamped();
+    const qty = normalizeQtyInInput();
     const name = `passport_sheet_${nowStamp()}_x${qty}.pdf`;
     const dataUrl = sheetCanvasFull.toDataURL("image/jpeg", 0.95);
 
@@ -1284,7 +1331,7 @@
     if (qtyInput) {
       qtyInput.min = "1";
       qtyInput.max = String(MAX_QTY_A4);
-      if (!qtyInput.value) qtyInput.value = "12";
+      if (!String(qtyInput.value || "").trim()) qtyInput.value = String(lastGoodQty);
     }
 
     // Restore last captured photo (if any) so Apply Background is clickable after refresh.
@@ -1423,7 +1470,14 @@
 
     if (qtyInput) {
       qtyInput.addEventListener("input", () => renderSheetAll());
-      qtyInput.addEventListener("change", () => renderSheetAll());
+      qtyInput.addEventListener("change", () => {
+        normalizeQtyInInput();
+        renderSheetAll();
+      });
+      qtyInput.addEventListener("blur", () => {
+        normalizeQtyInInput();
+        renderSheetAll();
+      });
     }
     btnDownloadJpg.addEventListener("click", () => exportJpg());
     btnDownloadPdf.addEventListener("click", () => exportPdf());
