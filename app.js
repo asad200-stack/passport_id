@@ -30,7 +30,7 @@
 
   const MP_FACE_VERSION = "0.4.1646425229";
 
-  const BG_COLORS = { white: "FFFFFF", gray: "E5E5E5" };
+  const BG_COLORS = { white: "FFFFFF", gray: "D0D0D0" };
 
   // --- Elements ---
   const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
