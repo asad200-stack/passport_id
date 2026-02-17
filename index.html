@@ -87,16 +87,16 @@
 
             <div class="controls controls--tight">
               <div class="controlRow">
-                <label class="label" for="bgEngine">Background</label>
-                <select id="bgEngine" class="select">
-                  <option value="removebg" selected>Studio (remove.bg HD)</option>
-                  <option value="mediapipe">Fast (On-device, preview)</option>
-                </select>
-              </div>
-
-              <div class="controlRow" id="apiKeyRow">
                 <label class="label" for="removebgKey">remove.bg Key</label>
                 <input id="removebgKey" class="input" type="password" placeholder="Paste API key (saved on this device)" />
+              </div>
+
+              <div class="controlRow">
+                <label class="label">Background color</label>
+                <div class="colorOpts" role="group" aria-label="Background color">
+                  <label class="colorOpt"><input type="radio" name="bgColor" value="FFFFFF" checked /> White</label>
+                  <label class="colorOpt"><input type="radio" name="bgColor" value="E5E5E5" /> Gray</label>
+                </div>
               </div>
 
               <div class="controlRow">
@@ -104,8 +104,7 @@
               </div>
 
               <div class="smallNote">
-                For embassy-grade results (natural hair edges + pure white background), use Studio mode.
-                Fast mode is a preview and may show cutout artifacts.
+                Studio (remove.bg HD). Embassy-grade results with natural hair edges.
               </div>
             </div>
           </div>
@@ -151,13 +150,9 @@
     <canvas id="workCanvas" class="hidden"></canvas>
     <canvas id="maskCanvas" class="hidden"></canvas>
 
-    <!-- AI libs (client-side only) - pinned versions for iOS/Safari reliability -->
+    <!-- AI lib (face detection only) - pinned version for iOS/Safari reliability -->
     <script
       src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection@0.4.1646425229/face_detection.js"
-      crossorigin="anonymous"
-    ></script>
-    <script
-      src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/selfie_segmentation.js"
       crossorigin="anonymous"
     ></script>
     <!-- PDF export -->
