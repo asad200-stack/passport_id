@@ -57,6 +57,9 @@
 
   const photoMeta = $("photoMeta");
   const sheetMeta = $("sheetMeta");
+  const bgProvider = /** @type {HTMLSelectElement} */ ($("bgProvider"));
+  const apiKeyRow = $("apiKeyRow");
+  const removebgKey = /** @type {HTMLInputElement} */ ($("removebgKey"));
   const btnApplyBg = /** @type {HTMLButtonElement} */ ($("btnApplyBg"));
 
   // --- State ---
@@ -87,6 +90,8 @@
   const STORAGE = {
     rawPhoto: "passport_raw_photo_v1",
     bgColor: "passport_bg_color",
+    bgProvider: "passport_bg_provider",
+    removebgKey: "passport_removebg_key",
   };
 
   const BGREMOVERFREE_API = "https://www.bgremoverfree.com/api/process/";
@@ -143,6 +148,8 @@
 
   function updateApplyBgUi() {
     if (btnApplyBg) enable(btnApplyBg, hasRawPhoto);
+    const useRemoveBg = bgProvider?.value === "removebg";
+    if (apiKeyRow) apiKeyRow.style.display = useRemoveBg ? "flex" : "none";
   }
 
   function getBackgroundColorHex() {
@@ -232,6 +239,49 @@
     });
   }
 
+  async function removeBackgroundStudioRemoveBg(srcCanvas, bgColorHex) {
+    const key = (removebgKey?.value || "").trim();
+    if (!key) {
+      throw new Error("Missing remove.bg API key. Paste it in the field above.");
+    }
+
+    const blob = await new Promise((resolve) => srcCanvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("Failed to encode image.");
+
+    const fd = new FormData();
+    fd.append("image_file", blob, "photo.png");
+    fd.append("size", "auto");
+    fd.append("format", "png");
+    fd.append("bg_color", (bgColorHex || BG_COLORS.white).replace(/^#/, ""));
+
+    const res = await fetch("https://api.remove.bg/v1.0/removebg", {
+      method: "POST",
+      headers: { "X-Api-Key": key },
+      body: fd,
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      const err = new Error(`remove.bg error (${res.status}). ${txt}`.trim());
+      err.status = res.status;
+      err.body = txt;
+      throw err;
+    }
+
+    const outBlob = await res.blob();
+    const bmp = await createImageBitmap(outBlob);
+
+    const out = document.createElement("canvas");
+    out.width = srcCanvas.width;
+    out.height = srcCanvas.height;
+    const ctx = out.getContext("2d", { willReadFrequently: true });
+    const hex = (bgColorHex || BG_COLORS.white).replace(/^#/, "");
+    ctx.fillStyle = "#" + hex;
+    ctx.fillRect(0, 0, out.width, out.height);
+    ctx.drawImage(bmp, 0, 0, out.width, out.height);
+    return out;
+  }
+
   async function removeBackgroundFree(srcCanvas, bgColorHex) {
     const blob = await new Promise((resolve) => srcCanvas.toBlob(resolve, "image/png"));
     if (!blob) throw new Error("Failed to encode image.");
@@ -276,23 +326,35 @@
       setValidation("No photo captured yet. Take Photo first.", "warn");
       return;
     }
+    const provider = bgProvider?.value || "bgremoverfree";
     const bgHex = getBackgroundColorHex();
     const pctx = photoCanvas.getContext("2d", { willReadFrequently: true });
     setStatus("Processing…", "info");
     try {
-      setValidation("Applying background (bgremoverfree.com)…", "info");
-      const out = await removeBackgroundFree(rawPhotoCanvas, bgHex);
+      setValidation(provider === "removebg" ? "Applying Studio (remove.bg)…" : "Applying (bgremoverfree.com)…", "info");
+      const out =
+        provider === "removebg"
+          ? await removeBackgroundStudioRemoveBg(rawPhotoCanvas, bgHex)
+          : await removeBackgroundFree(rawPhotoCanvas, bgHex);
       pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
       pctx.fillStyle = "#" + bgHex;
       pctx.fillRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
       pctx.drawImage(out, 0, 0);
 
-      // Subtle final adjustments (safe)
       applySubtleEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
-      afterProcessSuccess({ note: "Background applied." });
+      afterProcessSuccess({ note: provider === "removebg" ? "Studio applied." : "Background applied." });
     } catch (e) {
-      const msg = String(e?.message || e || "Unknown error");
-      setValidation(`إزالة الخلفية فشلت: ${msg}`, "bad");
+      const status = e?.status;
+      const body = String(e?.body || e?.message || "").toLowerCase();
+      let msg;
+      if (provider === "removebg" && (status === 402 || body.includes("insufficient_credits") || body.includes("insufficient credits"))) {
+        msg = "remove.bg credits used up. Buy more credits or wait for monthly renewal.";
+      } else if (status === 429 || body.includes("rate limit") || body.includes("too many")) {
+        msg = "Too many requests. Wait a minute and try again.";
+      } else {
+        msg = String(e?.message || e || "Unknown error");
+      }
+      setValidation(`Background removal failed: ${msg}`, "bad");
       setStatus("Blocked", "bad");
     }
   }
@@ -987,12 +1049,20 @@
 
   // --- Wire up events ---
   async function boot() {
-    // Restore saved settings (background color)
+    // Restore saved settings
     try {
+      const savedKey = localStorage.getItem(STORAGE.removebgKey);
+      if (savedKey && removebgKey) removebgKey.value = savedKey;
+
       const savedBgColor = localStorage.getItem(STORAGE.bgColor);
       if (savedBgColor) {
         const radio = document.querySelector(`input[name="bgColor"][value="${savedBgColor}"]`);
         if (radio) radio.checked = true;
+      }
+
+      const savedProvider = localStorage.getItem(STORAGE.bgProvider);
+      if (savedProvider && bgProvider && (savedProvider === "removebg" || savedProvider === "bgremoverfree")) {
+        bgProvider.value = savedProvider;
       }
     } catch {
       // ignore
@@ -1133,6 +1203,26 @@
         if (hasRawPhoto) void applyBackgroundToCurrent();
       });
     });
+    if (bgProvider) {
+      bgProvider.addEventListener("change", () => {
+        try {
+          localStorage.setItem(STORAGE.bgProvider, bgProvider.value);
+        } catch {
+          // ignore
+        }
+        updateApplyBgUi();
+      });
+    }
+    if (removebgKey) {
+      removebgKey.addEventListener("input", () => {
+        try {
+          localStorage.setItem(STORAGE.removebgKey, removebgKey.value);
+        } catch {
+          // ignore
+        }
+      });
+    }
+
     cameraSelect.addEventListener("change", async () => {
       if (!stream) return;
       try {

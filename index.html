@@ -87,6 +87,19 @@
 
             <div class="controls controls--tight">
               <div class="controlRow">
+                <label class="label" for="bgProvider">Background removal</label>
+                <select id="bgProvider" class="select">
+                  <option value="bgremoverfree">Free (bgremoverfree.com)</option>
+                  <option value="removebg">Studio (remove.bg) — requires API key</option>
+                </select>
+              </div>
+
+              <div class="controlRow" id="apiKeyRow" style="display: none;">
+                <label class="label" for="removebgKey">remove.bg API Key</label>
+                <input id="removebgKey" class="input" type="password" placeholder="Paste API key (saved on this device)" />
+              </div>
+
+              <div class="controlRow">
                 <label class="label">Background color</label>
                 <div class="colorOpts" role="group" aria-label="Background color">
                   <label class="colorOpt"><input type="radio" name="bgColor" value="FFFFFF" checked /> White</label>
@@ -99,7 +112,7 @@
               </div>
 
               <div class="smallNote">
-                إزالة الخلفية عبر bgremoverfree.com (مجاني).
+                Free: no API key. Studio: higher quality, requires remove.bg API key.
               </div>
             </div>
           </div>
