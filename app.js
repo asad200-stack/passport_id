@@ -58,7 +58,9 @@
   const photoMeta = $("photoMeta");
   const sheetMeta = $("sheetMeta");
   const bgProvider = /** @type {HTMLSelectElement} */ ($("bgProvider"));
-  const apiKeyRow = $("apiKeyRow");
+  const rowBgRemoverFreeKey = $("rowBgRemoverFreeKey");
+  const rowRemovebgKey = $("rowRemovebgKey");
+  const bgremoverfreeKey = /** @type {HTMLInputElement} */ ($("bgremoverfreeKey"));
   const removebgKey = /** @type {HTMLInputElement} */ ($("removebgKey"));
   const btnApplyBg = /** @type {HTMLButtonElement} */ ($("btnApplyBg"));
 
@@ -90,11 +92,12 @@
   const STORAGE = {
     rawPhoto: "passport_raw_photo_v1",
     bgColor: "passport_bg_color",
-    bgProvider: "passport_bg_provider",
     removebgKey: "passport_removebg_key",
+    bgremoverfreeKey: "passport_bgremoverfree_key",
+    bgProvider: "passport_bg_provider",
   };
 
-  const BGREMOVERFREE_API = "https://www.bgremoverfree.com/api/process/";
+  const BGREMOVERFREE_API = "https://bgremoverfree.com/api/v1/process/";
 
   // Face detection fallback mode:
   // - "mediapipe" (default)
@@ -148,6 +151,9 @@
 
   function updateApplyBgUi() {
     if (btnApplyBg) enable(btnApplyBg, hasRawPhoto);
+    const useFree = bgProvider?.value === "bgremoverfree";
+    if (rowBgRemoverFreeKey) rowBgRemoverFreeKey.style.display = useFree ? "flex" : "none";
+    if (rowRemovebgKey) rowRemovebgKey.style.display = useFree ? "none" : "flex";
   }
 
   function getBackgroundColorHex() {
@@ -280,7 +286,12 @@
     return out;
   }
 
-  async function removeBackgroundFree(srcCanvas, bgColorHex) {
+  async function removeBackgroundBgRemoverFree(srcCanvas, bgColorHex) {
+    const key = (bgremoverfreeKey?.value || "").trim();
+    if (!key) {
+      throw new Error("Missing bgremoverfree.com API key. Get a free key at bgremoverfree.com.");
+    }
+
     const blob = await new Promise((resolve) => srcCanvas.toBlob(resolve, "image/png"));
     if (!blob) throw new Error("Failed to encode image.");
 
@@ -289,12 +300,13 @@
 
     const res = await fetch(BGREMOVERFREE_API, {
       method: "POST",
+      headers: { Authorization: "Bearer " + key },
       body: fd,
     });
 
     const json = await res.json().catch(() => ({}));
     if (!json.success || !json.image_data) {
-      const msg = json.message || res.statusText || `Error ${res.status}`;
+      const msg = json.message || json.error || res.statusText || "Error " + res.status;
       const err = new Error(msg);
       err.status = res.status;
       throw err;
@@ -329,30 +341,30 @@
     const pctx = photoCanvas.getContext("2d", { willReadFrequently: true });
     setStatus("Processing…", "info");
     try {
-      setValidation(provider === "removebg" ? "Applying Studio (remove.bg)…" : "Applying (bgremoverfree.com)…", "info");
+      setValidation(provider === "bgremoverfree" ? "Applying (bgremoverfree.com)…" : "Applying Studio (remove.bg)…", "info");
       const out =
-        provider === "removebg"
-          ? await removeBackgroundStudioRemoveBg(rawPhotoCanvas, bgHex)
-          : await removeBackgroundFree(rawPhotoCanvas, bgHex);
+        provider === "bgremoverfree"
+          ? await removeBackgroundBgRemoverFree(rawPhotoCanvas, bgHex)
+          : await removeBackgroundStudioRemoveBg(rawPhotoCanvas, bgHex);
       pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
       pctx.fillStyle = "#" + bgHex;
       pctx.fillRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
       pctx.drawImage(out, 0, 0);
 
       applySubtleEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
-      afterProcessSuccess({ note: provider === "removebg" ? "Studio applied." : "Background applied." });
+      afterProcessSuccess({ note: provider === "bgremoverfree" ? "Background applied (100/day free)." : "Studio applied." });
     } catch (e) {
       const status = e?.status;
       const body = String(e?.body || e?.message || "").toLowerCase();
       let msg;
       if (provider === "removebg" && (status === 402 || body.includes("insufficient_credits") || body.includes("insufficient credits"))) {
-        msg = "remove.bg credits used up. Buy more credits or wait for monthly renewal.";
+        msg = "remove.bg credits used up. Buy more or wait for renewal.";
       } else if (status === 429 || body.includes("rate limit") || body.includes("too many")) {
         msg = "Too many requests. Wait a minute and try again.";
       } else {
         msg = String(e?.message || e || "Unknown error");
       }
-      setValidation(`Background removal failed: ${msg}`, "bad");
+      setValidation("Background removal failed: " + msg, "bad");
       setStatus("Blocked", "bad");
     }
   }
@@ -1049,18 +1061,21 @@
   async function boot() {
     // Restore saved settings
     try {
-      const savedKey = localStorage.getItem(STORAGE.removebgKey);
-      if (savedKey && removebgKey) removebgKey.value = savedKey;
+      const savedRemoveBgKey = localStorage.getItem(STORAGE.removebgKey);
+      if (savedRemoveBgKey != null && removebgKey) removebgKey.value = savedRemoveBgKey;
+
+      const savedBgRemoverFreeKey = localStorage.getItem(STORAGE.bgremoverfreeKey);
+      if (savedBgRemoverFreeKey != null && bgremoverfreeKey) bgremoverfreeKey.value = savedBgRemoverFreeKey;
+
+      const savedProvider = localStorage.getItem(STORAGE.bgProvider);
+      if (savedProvider && bgProvider && (savedProvider === "removebg" || savedProvider === "bgremoverfree")) {
+        bgProvider.value = savedProvider;
+      }
 
       const savedBgColor = localStorage.getItem(STORAGE.bgColor);
       if (savedBgColor) {
         const radio = document.querySelector(`input[name="bgColor"][value="${savedBgColor}"]`);
         if (radio) radio.checked = true;
-      }
-
-      const savedProvider = localStorage.getItem(STORAGE.bgProvider);
-      if (savedProvider && bgProvider && (savedProvider === "removebg" || savedProvider === "bgremoverfree")) {
-        bgProvider.value = savedProvider;
       }
     } catch {
       // ignore
@@ -1211,14 +1226,31 @@
         updateApplyBgUi();
       });
     }
+
     if (removebgKey) {
-      removebgKey.addEventListener("input", () => {
+      function saveRemoveBgKey() {
         try {
           localStorage.setItem(STORAGE.removebgKey, removebgKey.value);
         } catch {
           // ignore
         }
-      });
+      }
+      removebgKey.addEventListener("input", saveRemoveBgKey);
+      removebgKey.addEventListener("change", saveRemoveBgKey);
+      removebgKey.addEventListener("blur", saveRemoveBgKey);
+    }
+
+    if (bgremoverfreeKey) {
+      function saveBgRemoverFreeKey() {
+        try {
+          localStorage.setItem(STORAGE.bgremoverfreeKey, bgremoverfreeKey.value);
+        } catch {
+          // ignore
+        }
+      }
+      bgremoverfreeKey.addEventListener("input", saveBgRemoverFreeKey);
+      bgremoverfreeKey.addEventListener("change", saveBgRemoverFreeKey);
+      bgremoverfreeKey.addEventListener("blur", saveBgRemoverFreeKey);
     }
 
     cameraSelect.addEventListener("change", async () => {

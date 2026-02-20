@@ -89,14 +89,19 @@
               <div class="controlRow">
                 <label class="label" for="bgProvider">Background removal</label>
                 <select id="bgProvider" class="select">
-                  <option value="bgremoverfree">Free (bgremoverfree.com)</option>
-                  <option value="removebg">Studio (remove.bg) — requires API key</option>
+                  <option value="bgremoverfree">Free 100/day (bgremoverfree.com)</option>
+                  <option value="removebg">Studio (remove.bg)</option>
                 </select>
               </div>
 
-              <div class="controlRow" id="apiKeyRow">
+              <div class="controlRow" id="rowBgRemoverFreeKey">
+                <label class="label" for="bgremoverfreeKey">bgremoverfree.com API Key</label>
+                <input id="bgremoverfreeKey" class="input" type="password" placeholder="Free key from bgremoverfree.com (saved)" autocomplete="off" />
+              </div>
+
+              <div class="controlRow" id="rowRemovebgKey" style="display: none;">
                 <label class="label" for="removebgKey">remove.bg API Key</label>
-                <input id="removebgKey" class="input" type="password" placeholder="Paste API key (saved on this device)" />
+                <input id="removebgKey" class="input" type="password" placeholder="Paste API key (saved)" autocomplete="off" />
               </div>
 
               <div class="controlRow">
@@ -112,7 +117,7 @@
               </div>
 
               <div class="smallNote">
-                Free: no API key. Studio: higher quality, requires remove.bg API key.
+                Free: 100/day with bgremoverfree.com key. Studio: remove.bg (higher quality).
               </div>
             </div>
           </div>
