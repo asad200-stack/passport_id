@@ -148,8 +148,6 @@
 
   function updateApplyBgUi() {
     if (btnApplyBg) enable(btnApplyBg, hasRawPhoto);
-    const useRemoveBg = bgProvider?.value === "removebg";
-    if (apiKeyRow) apiKeyRow.style.display = useRemoveBg ? "flex" : "none";
   }
 
   function getBackgroundColorHex() {
