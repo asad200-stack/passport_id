@@ -57,7 +57,6 @@
 
   const photoMeta = $("photoMeta");
   const sheetMeta = $("sheetMeta");
-  const removebgKey = /** @type {HTMLInputElement} */ ($("removebgKey"));
   const btnApplyBg = /** @type {HTMLButtonElement} */ ($("btnApplyBg"));
 
   // --- State ---
@@ -86,10 +85,11 @@
   let hasRawPhoto = false;
 
   const STORAGE = {
-    removebgKey: "passport_removebg_key",
     rawPhoto: "passport_raw_photo_v1",
     bgColor: "passport_bg_color",
   };
+
+  const BGREMOVERFREE_API = "https://www.bgremoverfree.com/api/process/";
 
   // Face detection fallback mode:
   // - "mediapipe" (default)
@@ -232,35 +232,33 @@
     });
   }
 
-  async function removeBackgroundStudioRemoveBg(srcCanvas, bgColorHex) {
-    const key = (removebgKey?.value || "").trim();
-    if (!key) {
-      throw new Error("Missing remove.bg API key. Paste it in the field above.");
-    }
-
-    // Convert to PNG blob
+  async function removeBackgroundFree(srcCanvas, bgColorHex) {
     const blob = await new Promise((resolve) => srcCanvas.toBlob(resolve, "image/png"));
     if (!blob) throw new Error("Failed to encode image.");
 
     const fd = new FormData();
-    fd.append("image_file", blob, "photo.png");
-    fd.append("size", "auto");
-    fd.append("format", "png");
-    fd.append("bg_color", (bgColorHex || BG_COLORS.white).replace(/^#/, ""));
+    fd.append("image", blob, "photo.png");
 
-    const res = await fetch("https://api.remove.bg/v1.0/removebg", {
+    const res = await fetch(BGREMOVERFREE_API, {
       method: "POST",
-      headers: { "X-Api-Key": key },
       body: fd,
     });
 
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`remove.bg error (${res.status}). ${txt}`.trim());
+    const json = await res.json().catch(() => ({}));
+    if (!json.success || !json.image_data) {
+      const msg = json.message || res.statusText || `Error ${res.status}`;
+      const err = new Error(msg);
+      err.status = res.status;
+      throw err;
     }
 
-    const outBlob = await res.blob();
-    const bmp = await createImageBitmap(outBlob);
+    const dataUrl = json.image_data;
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("Failed to load processed image."));
+      i.src = dataUrl;
+    });
 
     const out = document.createElement("canvas");
     out.width = srcCanvas.width;
@@ -269,9 +267,10 @@
     const hex = (bgColorHex || BG_COLORS.white).replace(/^#/, "");
     ctx.fillStyle = "#" + hex;
     ctx.fillRect(0, 0, out.width, out.height);
-    ctx.drawImage(bmp, 0, 0, out.width, out.height);
+    ctx.drawImage(img, 0, 0, out.width, out.height);
     return out;
   }
+
   async function applyBackgroundToCurrent() {
     if (!hasRawPhoto) {
       setValidation("No photo captured yet. Take Photo first.", "warn");
@@ -281,8 +280,8 @@
     const pctx = photoCanvas.getContext("2d", { willReadFrequently: true });
     setStatus("Processing…", "info");
     try {
-      setValidation("Applying Studio background (remove.bg)…", "info");
-      const out = await removeBackgroundStudioRemoveBg(rawPhotoCanvas, bgHex);
+      setValidation("Applying background (bgremoverfree.com)…", "info");
+      const out = await removeBackgroundFree(rawPhotoCanvas, bgHex);
       pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
       pctx.fillStyle = "#" + bgHex;
       pctx.fillRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
@@ -290,10 +289,10 @@
 
       // Subtle final adjustments (safe)
       applySubtleEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
-      afterProcessSuccess({ note: "Studio background applied." });
+      afterProcessSuccess({ note: "Background applied." });
     } catch (e) {
       const msg = String(e?.message || e || "Unknown error");
-      setValidation(`Background apply failed: ${msg}`, "bad");
+      setValidation(`إزالة الخلفية فشلت: ${msg}`, "bad");
       setStatus("Blocked", "bad");
     }
   }
@@ -988,11 +987,8 @@
 
   // --- Wire up events ---
   async function boot() {
-    // Restore saved settings (API key + background color)
+    // Restore saved settings (background color)
     try {
-      const savedKey = localStorage.getItem(STORAGE.removebgKey);
-      if (savedKey && removebgKey) removebgKey.value = savedKey;
-
       const savedBgColor = localStorage.getItem(STORAGE.bgColor);
       if (savedBgColor) {
         const radio = document.querySelector(`input[name="bgColor"][value="${savedBgColor}"]`);
@@ -1137,16 +1133,6 @@
         if (hasRawPhoto) void applyBackgroundToCurrent();
       });
     });
-    if (removebgKey) {
-      removebgKey.addEventListener("input", () => {
-        try {
-          localStorage.setItem(STORAGE.removebgKey, removebgKey.value);
-        } catch {
-          // ignore
-        }
-      });
-    }
-
     cameraSelect.addEventListener("change", async () => {
       if (!stream) return;
       try {
