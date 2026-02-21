@@ -63,27 +63,19 @@ No external background-removal APIs, no proxy, no API keys. All processing is lo
 1. **انشر على Railway (مجاني):**
    - ادخل [railway.app](https://railway.app) وسجّل دخول بـ GitHub.
    - **New Project** → **Deploy from GitHub repo** → اختر مشروعك.
-   - في إعدادات المشروع:
-     - **Root Directory:** اتركه فاضي (مجلد الجذر = المشروع كامل).
-     - **Dockerfile path:** `server/Dockerfile`
-     - أو إذا ما في خيار path: انقل محتويات المشروع بحيث يكون الـ Dockerfile في الجذر، أو استخدم **Render** (تحت).
-   - بعد النشر، اضغط على الخدمة وافتح **Settings** → **Generate Domain** أو استخدم الرابط اللي يعطيك إياه Railway.
+   - **مهم:** من **Settings** للمشروع تأكد أن **Root Directory** فاضي (لا تضعه `server`). يبقى جذر الريبو عشان يلقى الـ Dockerfile والملفات.
+   - Railway يلقى الـ **Dockerfile** في الجذر وينشر. إذا فشل البناء: **Deployments** → **View logs** وتأكد أن الريبو فيه الملفات: `Dockerfile`, `index.html`, `app.js`, `server/package.json`, `server/index.js`.
+   - بعد النشر: **Settings** → **Generate Domain** → انسخ الرابط (مثل `https://passport-id-xxx.up.railway.app`).
 
 2. **أو انشر على Render:**
    - ادخل [render.com](https://render.com) → **New** → **Web Service**.
-   - وصّل الريبو، ثم:
-     - **Root Directory:** اترك فاضي.
-     - **Build Command:**  
-       `docker build -f server/Dockerfile -t app .`  
-     - **Start Command:**  
-       `docker run -p 3000:3000 app`  
-   - أو: اختر **Docker** كـ environment و **Dockerfile path** = `server/Dockerfile` (والـ build context = جذر المشروع). ثم **Create Web Service**.
-   - انسخ الرابط النهائي (مثل `https://passport-id-xxx.onrender.com`).
+   - وصّل الريبو، اختر **Docker**، واترك الإعدادات الافتراضية (الـ Dockerfile في الجذر).
+   - **Create Web Service** → انسخ الرابط (مثل `https://passport-id-xxx.onrender.com`).
 
 3. **الرابط اللي يطلع = هو اللي تعطيه للزبون.**  
-   الزبون يفتحه من أي جهاز، يرفع صورة أو يلتقط، يضغط "Apply Background"، ويحمّل — بدون أي إعداد أو حسابات أو مفاتيح.
+   الزبون يفتحه من أي جهاز (موبايل أو كمبيوتر)، يرفع صورة أو يلتقط، يضغط "Apply Background"، ويحمّل — بدون أي إعداد أو حسابات أو مفاتيح.
 
-(نفس السيرفر يقدّم الواجهة + إزالة الخلفية من نفس الرابط، فلا تحتاج GitHub Pages ولا config.)
+(نفس السيرفر يقدّم الواجهة + إزالة الخلفية من نفس الرابط.)
 
 ---
 
