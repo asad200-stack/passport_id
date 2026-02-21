@@ -43,4 +43,5 @@ If you prefer Firebase and are okay with the [Blaze (pay-as-you-go)](https://con
 
 ### Using the app
 
-- Host the app anywhere (e.g. GitHub Pages). Get a **bgremoverfree.com** API key and, for the free 100/day option, set **Proxy URL** to your Vercel (or Firebase) proxy URL above.
+- **Recommended (avoids "Blocked" on mobile):** Open the app from your **Vercel URL** (e.g. `https://id-azure-one.vercel.app`). The proxy is then same-origin and no extra setup is needed — just add your bgremoverfree API key.
+- On GitHub Pages: set **Proxy URL** to your Vercel proxy; if background removal is blocked (e.g. "Load failed"), use the app from the Vercel URL instead.

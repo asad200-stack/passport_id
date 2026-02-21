@@ -152,12 +152,37 @@
     setStatus(kind === "ok" ? "Face OK" : kind === "warn" ? "Adjust" : kind === "bad" ? "Blocked" : "Ready", kind);
   }
 
+  function getProxyOrigin() {
+    const raw = (bgremoverfreeProxyUrl?.value || "").trim();
+    if (!raw) return "";
+    try {
+      return new URL(raw).origin;
+    } catch {
+      return "";
+    }
+  }
+
   function updateApplyBgUi() {
     if (btnApplyBg) enable(btnApplyBg, hasRawPhoto);
     const useFree = bgProvider?.value === "bgremoverfree";
     if (rowBgRemoverFreeKey) rowBgRemoverFreeKey.style.display = useFree ? "flex" : "none";
     if (rowBgRemoverFreeProxy) rowBgRemoverFreeProxy.style.display = useFree ? "flex" : "none";
     if (rowRemovebgKey) rowRemovebgKey.style.display = useFree ? "none" : "flex";
+    const onGitHubPages = typeof window.location.hostname === "string" && window.location.hostname.endsWith("github.io");
+    const vercelHint = $("vercelHint");
+    const vercelHintLink = $("vercelHintLink");
+    if (vercelHint && vercelHintLink && onGitHubPages && useFree) {
+      const origin = getProxyOrigin();
+      if (origin) {
+        vercelHintLink.href = origin;
+        vercelHintLink.textContent = "Open from Vercel (" + origin.replace(/^https?:\/\//, "") + ")";
+        vercelHint.style.display = "block";
+      } else {
+        vercelHint.style.display = "none";
+      }
+    } else if (vercelHint) {
+      vercelHint.style.display = "none";
+    }
   }
 
   function getBackgroundColorHex() {
@@ -393,7 +418,10 @@
       } else if (status === 429 || body.includes("rate limit") || body.includes("too many")) {
         msg = "Too many requests. Wait a minute and try again.";
       } else if (provider === "bgremoverfree" && (body.includes("load failed") || body.includes("failed to fetch") || body.includes("network") || body.includes("check proxy"))) {
-        msg = "Check Proxy URL (use https://xxx.vercel.app/api/bgremoverfree-proxy), API key, and internet.";
+        const origin = getProxyOrigin();
+        msg = "Use the app from Vercel (same domain as Proxy) to avoid blocking. ";
+        if (origin) msg += "Open: " + origin;
+        else msg += "Check Proxy URL, API key, and internet.";
       } else {
         msg = String(e?.message || e || "Unknown error");
       }
@@ -1100,15 +1128,28 @@
       const savedBgRemoverFreeKey = localStorage.getItem(STORAGE.bgremoverfreeKey);
       if (savedBgRemoverFreeKey != null && bgremoverfreeKey) bgremoverfreeKey.value = savedBgRemoverFreeKey;
 
-      const savedProxyUrl = localStorage.getItem(STORAGE.bgremoverfreeProxyUrl);
-      if (savedProxyUrl != null && bgremoverfreeProxyUrl) {
-        bgremoverfreeProxyUrl.value = savedProxyUrl;
-      } else if (bgremoverfreeProxyUrl && typeof window.FIREBASE_PROXY_URL === "string" && window.FIREBASE_PROXY_URL) {
-        bgremoverfreeProxyUrl.value = window.FIREBASE_PROXY_URL;
-        try {
-          localStorage.setItem(STORAGE.bgremoverfreeProxyUrl, window.FIREBASE_PROXY_URL);
-        } catch {
-          // ignore
+      const isVercel = typeof window.location.hostname === "string" && window.location.hostname.endsWith("vercel.app");
+      const sameOriginProxy = window.location.origin + "/api/bgremoverfree-proxy";
+      if (bgremoverfreeProxyUrl) {
+        if (isVercel) {
+          bgremoverfreeProxyUrl.value = sameOriginProxy;
+          try {
+            localStorage.setItem(STORAGE.bgremoverfreeProxyUrl, sameOriginProxy);
+          } catch {
+            // ignore
+          }
+        } else {
+          const savedProxyUrl = localStorage.getItem(STORAGE.bgremoverfreeProxyUrl);
+          if (savedProxyUrl != null) {
+            bgremoverfreeProxyUrl.value = savedProxyUrl;
+          } else if (typeof window.FIREBASE_PROXY_URL === "string" && window.FIREBASE_PROXY_URL) {
+            bgremoverfreeProxyUrl.value = window.FIREBASE_PROXY_URL;
+            try {
+              localStorage.setItem(STORAGE.bgremoverfreeProxyUrl, window.FIREBASE_PROXY_URL);
+            } catch {
+              // ignore
+            }
+          }
         }
       }
 
