@@ -89,12 +89,6 @@
     bgColor: "passport_bg_color",
   };
 
-  const REMOVE_BG_URL = (typeof window !== "undefined" && window.location && (window.location.protocol === "http:" || window.location.protocol === "https:"))
-    ? window.location.origin + "/remove-bg"
-    : (typeof window !== "undefined" && window.REMOVE_BG_SERVER && String(window.REMOVE_BG_SERVER).trim())
-      ? String(window.REMOVE_BG_SERVER).trim().replace(/\/$/, "") + "/remove-bg"
-      : "http://localhost:3000/remove-bg";
-
   // Face detection fallback mode:
   // - "mediapipe" (default)
   // - "shape" (Shape Detection API FaceDetector)
@@ -240,31 +234,12 @@
     const blob = await new Promise((resolve) => srcCanvas.toBlob(resolve, "image/png"));
     if (!blob) throw new Error("Failed to encode image.");
 
-    const fd = new FormData();
-    fd.append("image", blob, "photo.png");
+    setValidation("Loading background removal… (first time may take a moment)", "info");
+    const removeBackground = (await import("https://esm.sh/@imgly/background-removal@1.5.3")).default;
+    setValidation("Removing background…", "info");
+    const outBlob = await removeBackground(blob);
 
-    const res = await fetch(REMOVE_BG_URL, {
-      method: "POST",
-      body: fd,
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      let msg;
-      try {
-        const json = JSON.parse(text);
-        msg = json.message || json.detail || text || res.statusText;
-      } catch {
-        msg = text || res.statusText || "Server error " + res.status;
-      }
-      const err = new Error(msg);
-      err.status = res.status;
-      throw err;
-    }
-
-    const outBlob = await res.blob();
     const bmp = await createImageBitmap(outBlob);
-
     const out = document.createElement("canvas");
     out.width = srcCanvas.width;
     out.height = srcCanvas.height;
@@ -285,7 +260,7 @@
     const pctx = photoCanvas.getContext("2d", { willReadFrequently: true });
     setStatus("Processing…", "info");
     try {
-      setValidation("Applying background removal (local rembg)…", "info");
+      setValidation("Applying background removal…", "info");
       const out = await removeBackgroundLocal(rawPhotoCanvas, bgHex);
       pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
       pctx.fillStyle = "#" + bgHex;
@@ -293,12 +268,9 @@
       pctx.drawImage(out, 0, 0);
 
       applySubtleEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
-      afterProcessSuccess({ note: "Background applied (local)." });
+      afterProcessSuccess({ note: "Background applied." });
     } catch (e) {
-      let msg = String(e?.message || e || "Unknown error");
-      if (msg.toLowerCase().includes("load failed") || msg.toLowerCase().includes("failed to fetch")) {
-        msg = "Cannot reach local server. Use the app on the same PC where the server runs (cd server && npm start). It does not work from GitHub Pages or phone.";
-      }
+      const msg = String(e?.message || e || "Unknown error");
       setValidation("Background removal failed: " + msg, "bad");
       setStatus("Blocked", "bad");
     }
