@@ -355,7 +355,12 @@
     } catch (netErr) {
       const m = String(netErr?.message || netErr);
       if (m.includes("Load failed") || m.includes("Failed to fetch") || m.includes("NetworkError")) {
-        throw new Error("Check Proxy URL (must be like https://xxx.vercel.app/api/bgremoverfree-proxy) and internet connection.");
+        const vercelUrl = typeof window.APP_VERCEL_URL === "string" && window.APP_VERCEL_URL
+          ? window.APP_VERCEL_URL
+          : getProxyOrigin();
+        throw new Error(vercelUrl
+          ? "Request blocked. Use the app from Vercel: " + vercelUrl
+          : "Check Proxy URL (https://xxx.vercel.app/api/bgremoverfree-proxy), API key, and internet.");
       }
       throw netErr;
     }
@@ -417,11 +422,13 @@
         msg = "remove.bg credits used up. Buy more or wait for renewal.";
       } else if (status === 429 || body.includes("rate limit") || body.includes("too many")) {
         msg = "Too many requests. Wait a minute and try again.";
-      } else if (provider === "bgremoverfree" && (body.includes("load failed") || body.includes("failed to fetch") || body.includes("network") || body.includes("check proxy"))) {
-        const origin = getProxyOrigin();
-        msg = "Use the app from Vercel (same domain as Proxy) to avoid blocking. ";
-        if (origin) msg += "Open: " + origin;
-        else msg += "Check Proxy URL, API key, and internet.";
+      } else if (provider === "bgremoverfree" && (body.includes("load failed") || body.includes("failed to fetch") || body.includes("network") || body.includes("check proxy") || body.includes("request blocked") || body.includes("cors"))) {
+        const origin = getProxyOrigin() || (typeof window.APP_VERCEL_URL === "string" ? window.APP_VERCEL_URL : "");
+        if (origin) {
+          msg = "Use the app from Vercel to fix: " + origin;
+        } else {
+          msg = "Check Proxy URL (https://xxx.vercel.app/api/bgremoverfree-proxy), API key, and internet.";
+        }
       } else {
         msg = String(e?.message || e || "Unknown error");
       }

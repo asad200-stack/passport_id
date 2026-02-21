@@ -20,4 +20,6 @@
   // Proxy URL for Free 100/day — deploy with: firebase deploy --only functions
   window.FIREBASE_PROXY_URL =
     "https://us-central1-" + firebaseConfig.projectId + ".cloudfunctions.net/bgremoverfreeProxy";
+  // Use app from this URL to avoid "Load failed" on GitHub Pages (same-origin proxy)
+  window.APP_VERCEL_URL = "https://id-azure-one.vercel.app";
 })();
