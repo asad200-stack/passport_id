@@ -239,7 +239,11 @@
     const removeBackground = mod.default || mod.removeBackground || mod.imglyRemoveBackground;
     if (typeof removeBackground !== "function") throw new Error("Background removal library failed to load. Try again or use another browser.");
     setValidation("Removing background…", "info");
-    const outBlob = await removeBackground(blob);
+    const config = {
+      publicPath: "https://cdn.jsdelivr.net/npm/@imgly/background-removal-data@1.4.5/dist/",
+      progress: (key, current, total) => { if (total) setValidation("Removing background… " + Math.round(100 * current / total) + "%", "info"); }
+    };
+    const outBlob = await removeBackground(blob, config);
 
     const bmp = await createImageBitmap(outBlob);
     const out = document.createElement("canvas");
