@@ -328,6 +328,7 @@
     fd.append("image", blob, "photo.png");
 
     const proxyUrl = (bgremoverfreeProxyUrl?.value || "").trim();
+    const isVercel = typeof window !== "undefined" && String(window.location.hostname || "").endsWith("vercel.app");
     let apiUrl;
     if (proxyUrl) {
       try {
@@ -341,6 +342,8 @@
       } catch {
         apiUrl = proxyUrl.replace(/\/$/, "");
       }
+    } else if (isVercel) {
+      apiUrl = window.location.origin + "/api/bgremoverfree-proxy";
     } else {
       apiUrl = BGREMOVERFREE_API;
     }

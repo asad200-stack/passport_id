@@ -45,3 +45,10 @@ If you prefer Firebase and are okay with the [Blaze (pay-as-you-go)](https://con
 
 - **Recommended (avoids "Blocked" on mobile):** Open the app from your **Vercel URL** (e.g. `https://id-azure-one.vercel.app`). The proxy is then same-origin and no extra setup is needed — just add your bgremoverfree API key.
 - On GitHub Pages: set **Proxy URL** to your Vercel proxy; if background removal is blocked (e.g. "Load failed"), use the app from the Vercel URL instead.
+
+### If it still doesn't work
+
+1. **Test the proxy:** Open `https://id-azure-one.vercel.app/api/bgremoverfree-proxy` in the browser. You should see `{"ok":true,"message":"bgremoverfree proxy is running",...}`. If you get 404 or an error, redeploy: from project root run `vercel --prod`.
+2. **Use the app only from Vercel:** Always open `https://id-azure-one.vercel.app` (not GitHub Pages). Take/upload photo, enter **bgremoverfree.com API Key**, click Apply Background. Leave Proxy URL as-is (it fills automatically).
+3. **Check the API key:** Get a free key from [bgremoverfree.com](https://bgremoverfree.com). If you hit "401" or "invalid", the key is wrong or expired.
+4. **Studio fallback:** If Free still fails, switch to **Studio (remove.bg)** in the dropdown and add your remove.bg API key — it works from any host.
