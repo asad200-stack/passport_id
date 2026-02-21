@@ -99,6 +99,11 @@
                 <input id="bgremoverfreeKey" class="input" type="password" placeholder="Free key from bgremoverfree.com (saved)" autocomplete="off" />
               </div>
 
+              <div class="controlRow" id="rowBgRemoverFreeProxy">
+                <label class="label" for="bgremoverfreeProxyUrl">Proxy URL</label>
+                <input id="bgremoverfreeProxyUrl" class="input" type="url" placeholder="Required for GitHub Pages — see README" autocomplete="off" />
+              </div>
+
               <div class="controlRow" id="rowRemovebgKey" style="display: none;">
                 <label class="label" for="removebgKey">remove.bg API Key</label>
                 <input id="removebgKey" class="input" type="password" placeholder="Paste API key (saved)" autocomplete="off" />
@@ -117,7 +122,7 @@
               </div>
 
               <div class="smallNote">
-                Free: 100/day with bgremoverfree.com key. Studio: remove.bg (higher quality).
+                Free: 100/day. On GitHub Pages set Proxy URL (deploy Firebase Function from README). Studio: remove.bg.
               </div>
             </div>
           </div>
@@ -171,6 +176,7 @@
     <!-- PDF export -->
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
+    <script src="./firebase-config.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

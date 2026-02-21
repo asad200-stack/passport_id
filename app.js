@@ -59,8 +59,10 @@
   const sheetMeta = $("sheetMeta");
   const bgProvider = /** @type {HTMLSelectElement} */ ($("bgProvider"));
   const rowBgRemoverFreeKey = $("rowBgRemoverFreeKey");
+  const rowBgRemoverFreeProxy = $("rowBgRemoverFreeProxy");
   const rowRemovebgKey = $("rowRemovebgKey");
   const bgremoverfreeKey = /** @type {HTMLInputElement} */ ($("bgremoverfreeKey"));
+  const bgremoverfreeProxyUrl = /** @type {HTMLInputElement} */ ($("bgremoverfreeProxyUrl"));
   const removebgKey = /** @type {HTMLInputElement} */ ($("removebgKey"));
   const btnApplyBg = /** @type {HTMLButtonElement} */ ($("btnApplyBg"));
 
@@ -94,6 +96,7 @@
     bgColor: "passport_bg_color",
     removebgKey: "passport_removebg_key",
     bgremoverfreeKey: "passport_bgremoverfree_key",
+    bgremoverfreeProxyUrl: "passport_bgremoverfree_proxy_url",
     bgProvider: "passport_bg_provider",
   };
 
@@ -153,6 +156,7 @@
     if (btnApplyBg) enable(btnApplyBg, hasRawPhoto);
     const useFree = bgProvider?.value === "bgremoverfree";
     if (rowBgRemoverFreeKey) rowBgRemoverFreeKey.style.display = useFree ? "flex" : "none";
+    if (rowBgRemoverFreeProxy) rowBgRemoverFreeProxy.style.display = useFree ? "flex" : "none";
     if (rowRemovebgKey) rowRemovebgKey.style.display = useFree ? "none" : "flex";
   }
 
@@ -298,7 +302,10 @@
     const fd = new FormData();
     fd.append("image", blob, "photo.png");
 
-    const res = await fetch(BGREMOVERFREE_API, {
+    const proxyUrl = (bgremoverfreeProxyUrl?.value || "").trim();
+    const apiUrl = proxyUrl ? proxyUrl.replace(/\/$/, "") : BGREMOVERFREE_API;
+
+    const res = await fetch(apiUrl, {
       method: "POST",
       headers: { Authorization: "Bearer " + key },
       body: fd,
@@ -361,6 +368,8 @@
         msg = "remove.bg credits used up. Buy more or wait for renewal.";
       } else if (status === 429 || body.includes("rate limit") || body.includes("too many")) {
         msg = "Too many requests. Wait a minute and try again.";
+      } else if (provider === "bgremoverfree" && (body.includes("load failed") || body.includes("failed to fetch") || body.includes("network"))) {
+        msg = "Request blocked (CORS) from this site. Switch to Studio (remove.bg) and use your remove.bg API key — it works from GitHub Pages.";
       } else {
         msg = String(e?.message || e || "Unknown error");
       }
@@ -1067,6 +1076,18 @@
       const savedBgRemoverFreeKey = localStorage.getItem(STORAGE.bgremoverfreeKey);
       if (savedBgRemoverFreeKey != null && bgremoverfreeKey) bgremoverfreeKey.value = savedBgRemoverFreeKey;
 
+      const savedProxyUrl = localStorage.getItem(STORAGE.bgremoverfreeProxyUrl);
+      if (savedProxyUrl != null && bgremoverfreeProxyUrl) {
+        bgremoverfreeProxyUrl.value = savedProxyUrl;
+      } else if (bgremoverfreeProxyUrl && typeof window.FIREBASE_PROXY_URL === "string" && window.FIREBASE_PROXY_URL) {
+        bgremoverfreeProxyUrl.value = window.FIREBASE_PROXY_URL;
+        try {
+          localStorage.setItem(STORAGE.bgremoverfreeProxyUrl, window.FIREBASE_PROXY_URL);
+        } catch {
+          // ignore
+        }
+      }
+
       const savedProvider = localStorage.getItem(STORAGE.bgProvider);
       if (savedProvider && bgProvider && (savedProvider === "removebg" || savedProvider === "bgremoverfree")) {
         bgProvider.value = savedProvider;
@@ -1251,6 +1272,19 @@
       bgremoverfreeKey.addEventListener("input", saveBgRemoverFreeKey);
       bgremoverfreeKey.addEventListener("change", saveBgRemoverFreeKey);
       bgremoverfreeKey.addEventListener("blur", saveBgRemoverFreeKey);
+    }
+
+    if (bgremoverfreeProxyUrl) {
+      function saveProxyUrl() {
+        try {
+          localStorage.setItem(STORAGE.bgremoverfreeProxyUrl, bgremoverfreeProxyUrl.value);
+        } catch {
+          // ignore
+        }
+      }
+      bgremoverfreeProxyUrl.addEventListener("input", saveProxyUrl);
+      bgremoverfreeProxyUrl.addEventListener("change", saveProxyUrl);
+      bgremoverfreeProxyUrl.addEventListener("blur", saveProxyUrl);
     }
 
     cameraSelect.addEventListener("change", async () => {

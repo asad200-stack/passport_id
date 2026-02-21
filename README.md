@@ -1,73 +1,46 @@
-# AI Passport & ID Photo (Static / GitHub Pages)
+# AI Passport & ID Photo
 
-A fast, studio-ready **passport & ID photo** web app built with **HTML + CSS + vanilla JavaScript** only.
+Browser-only passport photo generator with background removal and A4 print sheet.
 
-## Features
+## Free 100/day (bgremoverfree.com) on GitHub Pages — Proxy setup
 
-- **Live camera preview** (getUserMedia)
-- **Upload Image** (process external photos the same way)
-- **35×45 overlay + face guide**
-- **Mandatory face validation** (blocks capture if no face / bad distance)
-- **Automatic processing**
-  - Background removal → **pure white**
-  - Lighting / brightness / contrast
-  - Mild shadow lift + sharpening
-- **Print sheet generator (A4 @ 300 DPI)**
-  - Quantity: **1 / 4 / 8 / 12**
-  - Export: **JPG** or **PDF**
-  - **Top-left layout** (saves paper for second batch)
+When the app is on **GitHub Pages** (or any static host), the browser blocks direct requests to bgremoverfree.com (CORS). Use a **proxy** so the server calls the API — no CORS, no paid plan required.
 
-## Best Background Quality (Studio Mode)
+| Option | Cost | Who calls the API? |
+|--------|------|--------------------|
+| **Vercel** (recommended) | Free | Server (proxy) |
+| Firebase Functions | Blaze required | Server (proxy) |
 
-For **embassy/government-grade edges** (no halos, no yellow outline), use:
+---
 
-- **Background → Studio (remove.bg HD)**
-- Paste your **remove.bg API key** (saved locally in your browser)
+### Option 1: Vercel proxy (free, no upgrade)
 
-Notes:
-- This project is static-only; the key is stored in your browser (not on a server).
-- For production studio use, prefer a dedicated key and keep it private.
+1. Install Vercel CLI (one time): `npm i -g vercel`
+2. From the project root: `vercel` and follow the prompts (log in if needed).
+3. Copy the deployed URL (e.g. `https://id-xxx.vercel.app`). The proxy is at:  
+   **`https://your-project.vercel.app/api/bgremoverfree-proxy`**
+4. In the app, choose **Free 100/day (bgremoverfree.com)** and set **Proxy URL** to that URL.
+5. (Optional) Connect your Git repo in the Vercel dashboard so every push deploys automatically.
 
-## File Structure
+The proxy lives in `api/bgremoverfree-proxy.js` and forwards your request to bgremoverfree.com with your API key; it does not store the key.
 
-- `index.html`
-- `styles.css`
-- `app.js`
+---
 
-## Run Locally
+### Option 2: Firebase Functions (requires Blaze)
 
-Camera access requires HTTPS or localhost.
+If you prefer Firebase and are okay with the [Blaze (pay-as-you-go)](https://console.firebase.google.com/project/passport-id-johnycreator/usage/details) plan (you only pay if you exceed the free tier):
 
-- **Option A (recommended):** open with a local server (VS Code “Live Server”, etc.)
-- **Option B:** deploy to GitHub Pages (below)
+1. Install Firebase CLI: `npm install -g firebase-tools`
+2. Log in and select project: `firebase login` then `firebase use passport-id-johnycreator`
+3. Install and deploy:
+   ```bash
+   cd functions && npm install && cd ..
+   firebase deploy --only functions
+   ```
+4. Use the function URL as **Proxy URL** in the app (e.g. the app can auto-fill from `firebase-config.js` if the project ID matches).
 
-## Deploy on GitHub Pages
+---
 
-1. Create a GitHub repository and upload these files to the repo root.
-2. In GitHub: **Settings → Pages**
-3. **Source:** Deploy from a branch → select `main` and `/ (root)`
-4. Open your Pages URL (HTTPS) and allow camera permissions.
+### Using the app
 
-## Notes (Studio / Mobile)
-
-- On **iPhone/iPad**, use **Safari** (Chrome on iOS uses Safari engine and may block camera in some cases).
-- For best results: even lighting, plain background, subject faces camera directly.
-
-## Customization
-
-Key values are in `app.js`:
-
-- Sheet DPI: `SHEET_DPI` (default 300)
-- Photo DPI: `PHOTO_DPI` (default 450)
-- Photo size: `PHOTO_MM` (default 35×45)
-
-## Demo Link
-
-After deploying on GitHub Pages, paste your live URL here:
-
-- `https://<username>.github.io/<repo>/`
-
-# Notes
-
-- Camera access requires HTTPS (GitHub Pages is OK).
-- For best background quality, use **Studio (remove.bg HD)**.
+- Host the app anywhere (e.g. GitHub Pages). Get a **bgremoverfree.com** API key and, for the free 100/day option, set **Proxy URL** to your Vercel (or Firebase) proxy URL above.
