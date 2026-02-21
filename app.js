@@ -235,8 +235,8 @@
     if (!blob) throw new Error("Failed to encode image.");
 
     setValidation("Loading background removal… (first time may take a moment)", "info");
-    const mod = await import("https://esm.sh/@imgly/background-removal@1.5.3");
-    const removeBackground = (typeof mod.default === "function" ? mod.default : null) || mod.removeBackground || (mod.default && mod.default.default);
+    const mod = await import("https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.3/+esm");
+    const removeBackground = mod.default || mod.removeBackground || mod.imglyRemoveBackground;
     if (typeof removeBackground !== "function") throw new Error("Background removal library failed to load. Try again or use another browser.");
     setValidation("Removing background…", "info");
     const outBlob = await removeBackground(blob);
