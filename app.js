@@ -303,13 +303,37 @@
     fd.append("image", blob, "photo.png");
 
     const proxyUrl = (bgremoverfreeProxyUrl?.value || "").trim();
-    const apiUrl = proxyUrl ? proxyUrl.replace(/\/$/, "") : BGREMOVERFREE_API;
+    let apiUrl;
+    if (proxyUrl) {
+      try {
+        const u = new URL(proxyUrl);
+        const path = u.pathname.replace(/\/$/, "");
+        if (!path.endsWith("api/bgremoverfree-proxy")) {
+          apiUrl = u.origin + "/api/bgremoverfree-proxy";
+        } else {
+          apiUrl = u.origin + path;
+        }
+      } catch {
+        apiUrl = proxyUrl.replace(/\/$/, "");
+      }
+    } else {
+      apiUrl = BGREMOVERFREE_API;
+    }
 
-    const res = await fetch(apiUrl, {
-      method: "POST",
-      headers: { Authorization: "Bearer " + key },
-      body: fd,
-    });
+    let res;
+    try {
+      res = await fetch(apiUrl, {
+        method: "POST",
+        headers: { Authorization: "Bearer " + key },
+        body: fd,
+      });
+    } catch (netErr) {
+      const m = String(netErr?.message || netErr);
+      if (m.includes("Load failed") || m.includes("Failed to fetch") || m.includes("NetworkError")) {
+        throw new Error("Check Proxy URL (must be like https://xxx.vercel.app/api/bgremoverfree-proxy) and internet connection.");
+      }
+      throw netErr;
+    }
 
     const json = await res.json().catch(() => ({}));
     if (!json.success || !json.image_data) {
@@ -368,8 +392,8 @@
         msg = "remove.bg credits used up. Buy more or wait for renewal.";
       } else if (status === 429 || body.includes("rate limit") || body.includes("too many")) {
         msg = "Too many requests. Wait a minute and try again.";
-      } else if (provider === "bgremoverfree" && (body.includes("load failed") || body.includes("failed to fetch") || body.includes("network"))) {
-        msg = "Request blocked (CORS) from this site. Switch to Studio (remove.bg) and use your remove.bg API key — it works from GitHub Pages.";
+      } else if (provider === "bgremoverfree" && (body.includes("load failed") || body.includes("failed to fetch") || body.includes("network") || body.includes("check proxy"))) {
+        msg = "Check Proxy URL (use https://xxx.vercel.app/api/bgremoverfree-proxy), API key, and internet.";
       } else {
         msg = String(e?.message || e || "Unknown error");
       }
@@ -1285,7 +1309,19 @@
       bgremoverfreeProxyUrl.addEventListener("input", saveProxyUrl);
       bgremoverfreeProxyUrl.addEventListener("change", saveProxyUrl);
       bgremoverfreeProxyUrl.addEventListener("blur", saveProxyUrl);
+      bgremoverfreeProxyUrl.addEventListener("paste", () => setTimeout(saveProxyUrl, 0));
     }
+
+    // Persist Proxy URL and API keys on page unload (refresh/close) so pasted value is not lost
+    window.addEventListener("beforeunload", () => {
+      try {
+        if (bgremoverfreeProxyUrl?.value !== undefined) localStorage.setItem(STORAGE.bgremoverfreeProxyUrl, bgremoverfreeProxyUrl.value);
+        if (removebgKey?.value !== undefined) localStorage.setItem(STORAGE.removebgKey, removebgKey.value);
+        if (bgremoverfreeKey?.value !== undefined) localStorage.setItem(STORAGE.bgremoverfreeKey, bgremoverfreeKey.value);
+      } catch {
+        // ignore
+      }
+    });
 
     cameraSelect.addEventListener("change", async () => {
       if (!stream) return;
