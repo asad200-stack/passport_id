@@ -87,29 +87,6 @@
 
             <div class="controls controls--tight">
               <div class="controlRow">
-                <label class="label" for="bgProvider">Background removal</label>
-                <select id="bgProvider" class="select">
-                  <option value="bgremoverfree">Free 100/day (bgremoverfree.com)</option>
-                  <option value="removebg">Studio (remove.bg)</option>
-                </select>
-              </div>
-
-              <div class="controlRow" id="rowBgRemoverFreeKey">
-                <label class="label" for="bgremoverfreeKey">bgremoverfree.com API Key</label>
-                <input id="bgremoverfreeKey" class="input" type="password" placeholder="Free key from bgremoverfree.com (saved)" autocomplete="off" />
-              </div>
-
-              <div class="controlRow" id="rowBgRemoverFreeProxy">
-                <label class="label" for="bgremoverfreeProxyUrl">Proxy URL</label>
-                <input id="bgremoverfreeProxyUrl" class="input" type="url" placeholder="https://xxx.vercel.app/api/bgremoverfree-proxy" autocomplete="off" />
-              </div>
-
-              <div class="controlRow" id="rowRemovebgKey" style="display: none;">
-                <label class="label" for="removebgKey">remove.bg API Key</label>
-                <input id="removebgKey" class="input" type="password" placeholder="Paste API key (saved)" autocomplete="off" />
-              </div>
-
-              <div class="controlRow">
                 <label class="label">Background color</label>
                 <div class="colorOpts" role="group" aria-label="Background color">
                   <label class="colorOpt"><input type="radio" name="bgColor" value="FFFFFF" checked /> White</label>
@@ -122,10 +99,7 @@
               </div>
 
               <div class="smallNote">
-                Free: 100/day. On GitHub Pages set Proxy URL (deploy Firebase Function from README). Studio: remove.bg.
-              </div>
-              <div id="vercelHint" class="smallNote" style="display: none; margin-top: 0.5rem; font-weight: 600;">
-                If blocked on mobile: use the app from Vercel (same domain as Proxy URL) — <a id="vercelHintLink" href="#" target="_blank" rel="noopener">open from Vercel</a>.
+                If you opened this from a link (e.g. your provider gave you one URL), background removal works. If you opened from a file on your PC, start the server first: <code>cd server && npm start</code>.
               </div>
             </div>
           </div>
@@ -163,7 +137,7 @@
       </section>
 
       <footer class="footer">
-        <div>Works fully in-browser. Best on Chrome/Edge/Safari over HTTPS (GitHub Pages).</div>
+        <div>Runs in browser. Start the local server for background removal. Best on Chrome/Edge/Safari.</div>
       </footer>
     </main>
 
@@ -179,7 +153,7 @@
     <!-- PDF export -->
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
-    <script src="./firebase-config.js"></script>
+    <script src="./config.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

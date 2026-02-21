@@ -1,6 +1,6 @@
-/* AI Passport & ID Photo (static, browser-only)
+/* AI Passport & ID Photo
    - Camera capture + face validation (MediaPipe Face Detection)
-   - Background removal via remove.bg (Studio HD)
+   - Background removal via local rembg (POST to local server)
    - Canvas-based enhancement + sharpening
    - A4 print sheet generator + JPG/PDF export
 */
@@ -57,13 +57,6 @@
 
   const photoMeta = $("photoMeta");
   const sheetMeta = $("sheetMeta");
-  const bgProvider = /** @type {HTMLSelectElement} */ ($("bgProvider"));
-  const rowBgRemoverFreeKey = $("rowBgRemoverFreeKey");
-  const rowBgRemoverFreeProxy = $("rowBgRemoverFreeProxy");
-  const rowRemovebgKey = $("rowRemovebgKey");
-  const bgremoverfreeKey = /** @type {HTMLInputElement} */ ($("bgremoverfreeKey"));
-  const bgremoverfreeProxyUrl = /** @type {HTMLInputElement} */ ($("bgremoverfreeProxyUrl"));
-  const removebgKey = /** @type {HTMLInputElement} */ ($("removebgKey"));
   const btnApplyBg = /** @type {HTMLButtonElement} */ ($("btnApplyBg"));
 
   // --- State ---
@@ -87,20 +80,20 @@
   const DETECT_MAX_W = 360;
   let noFaceStreak = 0;
 
-  // Keep an unprocessed crop so Studio/Fast can be re-applied without stacking filters.
+  // Keep unprocessed crop for re-applying background removal.
   const rawPhotoCanvas = document.createElement("canvas");
   let hasRawPhoto = false;
 
   const STORAGE = {
     rawPhoto: "passport_raw_photo_v1",
     bgColor: "passport_bg_color",
-    removebgKey: "passport_removebg_key",
-    bgremoverfreeKey: "passport_bgremoverfree_key",
-    bgremoverfreeProxyUrl: "passport_bgremoverfree_proxy_url",
-    bgProvider: "passport_bg_provider",
   };
 
-  const BGREMOVERFREE_API = "https://bgremoverfree.com/api/v1/process/";
+  const REMOVE_BG_URL = (typeof window !== "undefined" && window.location && (window.location.protocol === "http:" || window.location.protocol === "https:"))
+    ? window.location.origin + "/remove-bg"
+    : (typeof window !== "undefined" && window.REMOVE_BG_SERVER && String(window.REMOVE_BG_SERVER).trim())
+      ? String(window.REMOVE_BG_SERVER).trim().replace(/\/$/, "") + "/remove-bg"
+      : "http://localhost:3000/remove-bg";
 
   // Face detection fallback mode:
   // - "mediapipe" (default)
@@ -152,37 +145,8 @@
     setStatus(kind === "ok" ? "Face OK" : kind === "warn" ? "Adjust" : kind === "bad" ? "Blocked" : "Ready", kind);
   }
 
-  function getProxyOrigin() {
-    const raw = (bgremoverfreeProxyUrl?.value || "").trim();
-    if (!raw) return "";
-    try {
-      return new URL(raw).origin;
-    } catch {
-      return "";
-    }
-  }
-
   function updateApplyBgUi() {
     if (btnApplyBg) enable(btnApplyBg, hasRawPhoto);
-    const useFree = bgProvider?.value === "bgremoverfree";
-    if (rowBgRemoverFreeKey) rowBgRemoverFreeKey.style.display = useFree ? "flex" : "none";
-    if (rowBgRemoverFreeProxy) rowBgRemoverFreeProxy.style.display = useFree ? "flex" : "none";
-    if (rowRemovebgKey) rowRemovebgKey.style.display = useFree ? "none" : "flex";
-    const onGitHubPages = typeof window.location.hostname === "string" && window.location.hostname.endsWith("github.io");
-    const vercelHint = $("vercelHint");
-    const vercelHintLink = $("vercelHintLink");
-    if (vercelHint && vercelHintLink && onGitHubPages && useFree) {
-      const origin = getProxyOrigin();
-      if (origin) {
-        vercelHintLink.href = origin;
-        vercelHintLink.textContent = "Open from Vercel (" + origin.replace(/^https?:\/\//, "") + ")";
-        vercelHint.style.display = "block";
-      } else {
-        vercelHint.style.display = "none";
-      }
-    } else if (vercelHint) {
-      vercelHint.style.display = "none";
-    }
   }
 
   function getBackgroundColorHex() {
@@ -272,32 +236,29 @@
     });
   }
 
-  async function removeBackgroundStudioRemoveBg(srcCanvas, bgColorHex) {
-    const key = (removebgKey?.value || "").trim();
-    if (!key) {
-      throw new Error("Missing remove.bg API key. Paste it in the field above.");
-    }
-
+  async function removeBackgroundLocal(srcCanvas, bgColorHex) {
     const blob = await new Promise((resolve) => srcCanvas.toBlob(resolve, "image/png"));
     if (!blob) throw new Error("Failed to encode image.");
 
     const fd = new FormData();
-    fd.append("image_file", blob, "photo.png");
-    fd.append("size", "auto");
-    fd.append("format", "png");
-    fd.append("bg_color", (bgColorHex || BG_COLORS.white).replace(/^#/, ""));
+    fd.append("image", blob, "photo.png");
 
-    const res = await fetch("https://api.remove.bg/v1.0/removebg", {
+    const res = await fetch(REMOVE_BG_URL, {
       method: "POST",
-      headers: { "X-Api-Key": key },
       body: fd,
     });
 
     if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      const err = new Error(`remove.bg error (${res.status}). ${txt}`.trim());
+      const text = await res.text().catch(() => "");
+      let msg;
+      try {
+        const json = JSON.parse(text);
+        msg = json.message || json.detail || text || res.statusText;
+      } catch {
+        msg = text || res.statusText || "Server error " + res.status;
+      }
+      const err = new Error(msg);
       err.status = res.status;
-      err.body = txt;
       throw err;
     }
 
@@ -315,125 +276,28 @@
     return out;
   }
 
-  async function removeBackgroundBgRemoverFree(srcCanvas, bgColorHex) {
-    const key = (bgremoverfreeKey?.value || "").trim();
-    if (!key) {
-      throw new Error("Missing bgremoverfree.com API key. Get a free key at bgremoverfree.com.");
-    }
-
-    const blob = await new Promise((resolve) => srcCanvas.toBlob(resolve, "image/png"));
-    if (!blob) throw new Error("Failed to encode image.");
-
-    const fd = new FormData();
-    fd.append("image", blob, "photo.png");
-
-    const proxyUrl = (bgremoverfreeProxyUrl?.value || "").trim();
-    const isVercel = typeof window !== "undefined" && String(window.location.hostname || "").endsWith("vercel.app");
-    let apiUrl;
-    if (proxyUrl) {
-      try {
-        const u = new URL(proxyUrl);
-        const path = u.pathname.replace(/\/$/, "");
-        if (!path.endsWith("api/bgremoverfree-proxy")) {
-          apiUrl = u.origin + "/api/bgremoverfree-proxy";
-        } else {
-          apiUrl = u.origin + path;
-        }
-      } catch {
-        apiUrl = proxyUrl.replace(/\/$/, "");
-      }
-    } else if (isVercel) {
-      apiUrl = window.location.origin + "/api/bgremoverfree-proxy";
-    } else {
-      apiUrl = BGREMOVERFREE_API;
-    }
-
-    let res;
-    try {
-      res = await fetch(apiUrl, {
-        method: "POST",
-        headers: { Authorization: "Bearer " + key },
-        body: fd,
-      });
-    } catch (netErr) {
-      const m = String(netErr?.message || netErr);
-      if (m.includes("Load failed") || m.includes("Failed to fetch") || m.includes("NetworkError")) {
-        const vercelUrl = typeof window.APP_VERCEL_URL === "string" && window.APP_VERCEL_URL
-          ? window.APP_VERCEL_URL
-          : getProxyOrigin();
-        throw new Error(vercelUrl
-          ? "Request blocked. Use the app from Vercel: " + vercelUrl
-          : "Check Proxy URL (https://xxx.vercel.app/api/bgremoverfree-proxy), API key, and internet.");
-      }
-      throw netErr;
-    }
-
-    const json = await res.json().catch(() => ({}));
-    if (!json.success || !json.image_data) {
-      const msg = json.message || json.error || res.statusText || "Error " + res.status;
-      const err = new Error(msg);
-      err.status = res.status;
-      throw err;
-    }
-
-    const dataUrl = json.image_data;
-    const img = await new Promise((resolve, reject) => {
-      const i = new Image();
-      i.onload = () => resolve(i);
-      i.onerror = () => reject(new Error("Failed to load processed image."));
-      i.src = dataUrl;
-    });
-
-    const out = document.createElement("canvas");
-    out.width = srcCanvas.width;
-    out.height = srcCanvas.height;
-    const ctx = out.getContext("2d", { willReadFrequently: true });
-    const hex = (bgColorHex || BG_COLORS.white).replace(/^#/, "");
-    ctx.fillStyle = "#" + hex;
-    ctx.fillRect(0, 0, out.width, out.height);
-    ctx.drawImage(img, 0, 0, out.width, out.height);
-    return out;
-  }
-
   async function applyBackgroundToCurrent() {
     if (!hasRawPhoto) {
       setValidation("No photo captured yet. Take Photo first.", "warn");
       return;
     }
-    const provider = bgProvider?.value || "bgremoverfree";
     const bgHex = getBackgroundColorHex();
     const pctx = photoCanvas.getContext("2d", { willReadFrequently: true });
     setStatus("Processing…", "info");
     try {
-      setValidation(provider === "bgremoverfree" ? "Applying (bgremoverfree.com)…" : "Applying Studio (remove.bg)…", "info");
-      const out =
-        provider === "bgremoverfree"
-          ? await removeBackgroundBgRemoverFree(rawPhotoCanvas, bgHex)
-          : await removeBackgroundStudioRemoveBg(rawPhotoCanvas, bgHex);
+      setValidation("Applying background removal (local rembg)…", "info");
+      const out = await removeBackgroundLocal(rawPhotoCanvas, bgHex);
       pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
       pctx.fillStyle = "#" + bgHex;
       pctx.fillRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
       pctx.drawImage(out, 0, 0);
 
       applySubtleEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
-      afterProcessSuccess({ note: provider === "bgremoverfree" ? "Background applied (100/day free)." : "Studio applied." });
+      afterProcessSuccess({ note: "Background applied (local)." });
     } catch (e) {
-      const status = e?.status;
-      const body = String(e?.body || e?.message || "").toLowerCase();
-      let msg;
-      if (provider === "removebg" && (status === 402 || body.includes("insufficient_credits") || body.includes("insufficient credits"))) {
-        msg = "remove.bg credits used up. Buy more or wait for renewal.";
-      } else if (status === 429 || body.includes("rate limit") || body.includes("too many")) {
-        msg = "Too many requests. Wait a minute and try again.";
-      } else if (provider === "bgremoverfree" && (body.includes("load failed") || body.includes("failed to fetch") || body.includes("network") || body.includes("check proxy") || body.includes("request blocked") || body.includes("cors"))) {
-        const origin = getProxyOrigin() || (typeof window.APP_VERCEL_URL === "string" ? window.APP_VERCEL_URL : "");
-        if (origin) {
-          msg = "Use the app from Vercel to fix: " + origin;
-        } else {
-          msg = "Check Proxy URL (https://xxx.vercel.app/api/bgremoverfree-proxy), API key, and internet.";
-        }
-      } else {
-        msg = String(e?.message || e || "Unknown error");
+      let msg = String(e?.message || e || "Unknown error");
+      if (msg.toLowerCase().includes("load failed") || msg.toLowerCase().includes("failed to fetch")) {
+        msg = "Cannot reach local server. Use the app on the same PC where the server runs (cd server && npm start). It does not work from GitHub Pages or phone.";
       }
       setValidation("Background removal failed: " + msg, "bad");
       setStatus("Blocked", "bad");
@@ -1132,42 +996,6 @@
   async function boot() {
     // Restore saved settings
     try {
-      const savedRemoveBgKey = localStorage.getItem(STORAGE.removebgKey);
-      if (savedRemoveBgKey != null && removebgKey) removebgKey.value = savedRemoveBgKey;
-
-      const savedBgRemoverFreeKey = localStorage.getItem(STORAGE.bgremoverfreeKey);
-      if (savedBgRemoverFreeKey != null && bgremoverfreeKey) bgremoverfreeKey.value = savedBgRemoverFreeKey;
-
-      const isVercel = typeof window.location.hostname === "string" && window.location.hostname.endsWith("vercel.app");
-      const sameOriginProxy = window.location.origin + "/api/bgremoverfree-proxy";
-      if (bgremoverfreeProxyUrl) {
-        if (isVercel) {
-          bgremoverfreeProxyUrl.value = sameOriginProxy;
-          try {
-            localStorage.setItem(STORAGE.bgremoverfreeProxyUrl, sameOriginProxy);
-          } catch {
-            // ignore
-          }
-        } else {
-          const savedProxyUrl = localStorage.getItem(STORAGE.bgremoverfreeProxyUrl);
-          if (savedProxyUrl != null) {
-            bgremoverfreeProxyUrl.value = savedProxyUrl;
-          } else if (typeof window.FIREBASE_PROXY_URL === "string" && window.FIREBASE_PROXY_URL) {
-            bgremoverfreeProxyUrl.value = window.FIREBASE_PROXY_URL;
-            try {
-              localStorage.setItem(STORAGE.bgremoverfreeProxyUrl, window.FIREBASE_PROXY_URL);
-            } catch {
-              // ignore
-            }
-          }
-        }
-      }
-
-      const savedProvider = localStorage.getItem(STORAGE.bgProvider);
-      if (savedProvider && bgProvider && (savedProvider === "removebg" || savedProvider === "bgremoverfree")) {
-        bgProvider.value = savedProvider;
-      }
-
       const savedBgColor = localStorage.getItem(STORAGE.bgColor);
       if (savedBgColor) {
         const radio = document.querySelector(`input[name="bgColor"][value="${savedBgColor}"]`);
@@ -1311,67 +1139,6 @@
         }
         if (hasRawPhoto) void applyBackgroundToCurrent();
       });
-    });
-    if (bgProvider) {
-      bgProvider.addEventListener("change", () => {
-        try {
-          localStorage.setItem(STORAGE.bgProvider, bgProvider.value);
-        } catch {
-          // ignore
-        }
-        updateApplyBgUi();
-      });
-    }
-
-    if (removebgKey) {
-      function saveRemoveBgKey() {
-        try {
-          localStorage.setItem(STORAGE.removebgKey, removebgKey.value);
-        } catch {
-          // ignore
-        }
-      }
-      removebgKey.addEventListener("input", saveRemoveBgKey);
-      removebgKey.addEventListener("change", saveRemoveBgKey);
-      removebgKey.addEventListener("blur", saveRemoveBgKey);
-    }
-
-    if (bgremoverfreeKey) {
-      function saveBgRemoverFreeKey() {
-        try {
-          localStorage.setItem(STORAGE.bgremoverfreeKey, bgremoverfreeKey.value);
-        } catch {
-          // ignore
-        }
-      }
-      bgremoverfreeKey.addEventListener("input", saveBgRemoverFreeKey);
-      bgremoverfreeKey.addEventListener("change", saveBgRemoverFreeKey);
-      bgremoverfreeKey.addEventListener("blur", saveBgRemoverFreeKey);
-    }
-
-    if (bgremoverfreeProxyUrl) {
-      function saveProxyUrl() {
-        try {
-          localStorage.setItem(STORAGE.bgremoverfreeProxyUrl, bgremoverfreeProxyUrl.value);
-        } catch {
-          // ignore
-        }
-      }
-      bgremoverfreeProxyUrl.addEventListener("input", saveProxyUrl);
-      bgremoverfreeProxyUrl.addEventListener("change", saveProxyUrl);
-      bgremoverfreeProxyUrl.addEventListener("blur", saveProxyUrl);
-      bgremoverfreeProxyUrl.addEventListener("paste", () => setTimeout(saveProxyUrl, 0));
-    }
-
-    // Persist Proxy URL and API keys on page unload (refresh/close) so pasted value is not lost
-    window.addEventListener("beforeunload", () => {
-      try {
-        if (bgremoverfreeProxyUrl?.value !== undefined) localStorage.setItem(STORAGE.bgremoverfreeProxyUrl, bgremoverfreeProxyUrl.value);
-        if (removebgKey?.value !== undefined) localStorage.setItem(STORAGE.removebgKey, removebgKey.value);
-        if (bgremoverfreeKey?.value !== undefined) localStorage.setItem(STORAGE.bgremoverfreeKey, bgremoverfreeKey.value);
-      } catch {
-        // ignore
-      }
     });
 
     cameraSelect.addEventListener("change", async () => {

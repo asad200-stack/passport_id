@@ -1,54 +1,102 @@
 # AI Passport & ID Photo
 
-Browser-only passport photo generator with background removal and A4 print sheet.
+Browser-based passport photo generator with **local** background removal and A4 print sheet. No API keys, no credits, works offline after setup.
 
-## Free 100/day (bgremoverfree.com) on GitHub Pages — Proxy setup
+## Architecture
 
-When the app is on **GitHub Pages** (or any static host), the browser blocks direct requests to bgremoverfree.com (CORS). Use a **proxy** so the server calls the API — no CORS, no paid plan required.
+```
+Frontend (HTML/JS)  →  Local Node server  →  rembg (Python)  →  Transparent PNG
+```
 
-| Option | Cost | Who calls the API? |
-|--------|------|--------------------|
-| **Vercel** (recommended) | Free | Server (proxy) |
-| Firebase Functions | Blaze required | Server (proxy) |
+- **Frontend:** Camera/upload, face validation, canvas processing, quantity, print sheet (JPG/PDF).
+- **Backend:** Minimal Express server that accepts an image and runs `rembg` locally.
+- **Background removal:** Unlimited, free, offline (rembg AI model runs on your machine).
+
+## Setup
+
+### 1. Python + rembg
+
+```bash
+pip install rembg
+```
+
+Optional (faster on GPU): `pip install rembg[gpu]`
+
+### 2. Node server
+
+```bash
+cd server
+npm install
+npm start
+```
+
+Server runs at `http://localhost:3000`. Endpoint: `POST /remove-bg` (multipart/form-data, field `image`).
+
+### 3. Frontend
+
+Open `index.html` in a browser (or use any static server, e.g. `npx serve .` from project root). The app sends background-removal requests to `http://localhost:3000/remove-bg`.
+
+## Usage
+
+1. Start the server: `cd server && npm start`
+2. Open the app (e.g. double-click `index.html` or `npx serve .`).
+3. Take a photo or upload an image.
+4. Click **Apply Background** (uses local rembg).
+5. Choose background color (white/gray), set quantity, download print sheet (JPG/PDF).
+
+## Project layout
+
+- `index.html`, `app.js`, `styles.css` — frontend
+- `server/` — Node + Express + multer; calls `rembg`; `POST /remove-bg`
+- `functions/` — Firebase (optional, unrelated to background removal)
+
+No external background-removal APIs, no proxy, no API keys. All processing is local.
 
 ---
 
-### Option 1: Vercel proxy (free, no upgrade)
+## للزبون: رابط واحد يفتح ويشتغل (بدون أي إعداد)
 
-1. Install Vercel CLI (one time): `npm i -g vercel`
-2. From the project root: `vercel` and follow the prompts (log in if needed).
-3. Copy the deployed URL (e.g. `https://id-xxx.vercel.app`). The proxy is at:  
-   **`https://your-project.vercel.app/api/bgremoverfree-proxy`**
-4. In the app, choose **Free 100/day (bgremoverfree.com)** and set **Proxy URL** to that URL.
-5. (Optional) Connect your Git repo in the Vercel dashboard so every push deploys automatically.
+أنت تنشر المشروع **مرة وحدة**، تاخد **رابط واحد**، وتعطيه للزبون. الزبون يفتح الرابط من الموبايل أو الكمبيوتر وكل شي يشتغل.
 
-The proxy lives in `api/bgremoverfree-proxy.js` and forwards your request to bgremoverfree.com with your API key; it does not store the key.
+### خطواتك (مرة وحدة)
+
+1. **انشر على Railway (مجاني):**
+   - ادخل [railway.app](https://railway.app) وسجّل دخول بـ GitHub.
+   - **New Project** → **Deploy from GitHub repo** → اختر مشروعك.
+   - في إعدادات المشروع:
+     - **Root Directory:** اتركه فاضي (مجلد الجذر = المشروع كامل).
+     - **Dockerfile path:** `server/Dockerfile`
+     - أو إذا ما في خيار path: انقل محتويات المشروع بحيث يكون الـ Dockerfile في الجذر، أو استخدم **Render** (تحت).
+   - بعد النشر، اضغط على الخدمة وافتح **Settings** → **Generate Domain** أو استخدم الرابط اللي يعطيك إياه Railway.
+
+2. **أو انشر على Render:**
+   - ادخل [render.com](https://render.com) → **New** → **Web Service**.
+   - وصّل الريبو، ثم:
+     - **Root Directory:** اترك فاضي.
+     - **Build Command:**  
+       `docker build -f server/Dockerfile -t app .`  
+     - **Start Command:**  
+       `docker run -p 3000:3000 app`  
+   - أو: اختر **Docker** كـ environment و **Dockerfile path** = `server/Dockerfile` (والـ build context = جذر المشروع). ثم **Create Web Service**.
+   - انسخ الرابط النهائي (مثل `https://passport-id-xxx.onrender.com`).
+
+3. **الرابط اللي يطلع = هو اللي تعطيه للزبون.**  
+   الزبون يفتحه من أي جهاز، يرفع صورة أو يلتقط، يضغط "Apply Background"، ويحمّل — بدون أي إعداد أو حسابات أو مفاتيح.
+
+(نفس السيرفر يقدّم الواجهة + إزالة الخلفية من نفس الرابط، فلا تحتاج GitHub Pages ولا config.)
 
 ---
 
-### Option 2: Firebase Functions (requires Blaze)
+## If someone sends you this project
 
-If you prefer Firebase and are okay with the [Blaze (pay-as-you-go)](https://console.firebase.google.com/project/passport-id-johnycreator/usage/details) plan (you only pay if you exceed the free tier):
+You can run it on your PC:
 
-1. Install Firebase CLI: `npm install -g firebase-tools`
-2. Log in and select project: `firebase login` then `firebase use passport-id-johnycreator`
-3. Install and deploy:
-   ```bash
-   cd functions && npm install && cd ..
-   firebase deploy --only functions
-   ```
-4. Use the function URL as **Proxy URL** in the app (e.g. the app can auto-fill from `firebase-config.js` if the project ID matches).
+1. **Install Python** (if not already), then: `pip install rembg`
+2. **Install Node.js** (if not already)
+3. Open a terminal in the project folder:
+   - `cd server`
+   - `npm install`
+   - `npm start`
+4. Open `index.html` in your browser (from the same PC), or run `npx serve .` in the project root and open the URL shown.
 
----
-
-### Using the app
-
-- **Recommended (avoids "Blocked" on mobile):** Open the app from your **Vercel URL** (e.g. `https://id-azure-one.vercel.app`). The proxy is then same-origin and no extra setup is needed — just add your bgremoverfree API key.
-- On GitHub Pages: set **Proxy URL** to your Vercel proxy; if background removal is blocked (e.g. "Load failed"), use the app from the Vercel URL instead.
-
-### If it still doesn't work
-
-1. **Test the proxy:** Open `https://id-azure-one.vercel.app/api/bgremoverfree-proxy` in the browser. You should see `{"ok":true,"message":"bgremoverfree proxy is running",...}`. If you get 404 or an error, redeploy: from project root run `vercel --prod`.
-2. **Use the app only from Vercel:** Always open `https://id-azure-one.vercel.app` (not GitHub Pages). Take/upload photo, enter **bgremoverfree.com API Key**, click Apply Background. Leave Proxy URL as-is (it fills automatically).
-3. **Check the API key:** Get a free key from [bgremoverfree.com](https://bgremoverfree.com). If you hit "401" or "invalid", the key is wrong or expired.
-4. **Studio fallback:** If Free still fails, switch to **Studio (remove.bg)** in the dropdown and add your remove.bg API key — it works from any host.
+Background removal works only when the app and server run on the **same computer**. No account or API key needed.
