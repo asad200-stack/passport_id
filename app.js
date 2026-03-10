@@ -1080,10 +1080,10 @@
         if (i >= qty) break;
         const x = startX + c * (photoW + gap);
         const y = startY + r * (photoH + gap);
-        // Fit: scale image so the whole photo fits inside the cell, centered (no crop)
-        const fitScale = Math.min(photoW / srcW, photoH / srcH);
-        const drawW = srcW * fitScale;
-        const drawH = srcH * fitScale;
+        // Cover: scale image to fill the entire cell (matches chosen print size), center crop
+        const coverScale = Math.max(photoW / srcW, photoH / srcH);
+        const drawW = srcW * coverScale;
+        const drawH = srcH * coverScale;
         const drawX = x + (photoW - drawW) / 2;
         const drawY = y + (photoH - drawH) / 2;
         ctx.drawImage(photoCanvas, 0, 0, srcW, srcH, drawX, drawY, drawW, drawH);
