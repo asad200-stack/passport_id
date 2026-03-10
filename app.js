@@ -689,8 +689,8 @@
       }
       customSizesList = parsed.filter(
         (item) =>
-          item && typeof item.id === "string" && typeof item.name === "string" && typeof item.w === "number" && typeof item.h === "number" && item.w >= 10 && item.h >= 10 && item.w <= 80 && item.h <= 80
-      );
+          item && typeof item.id === "string" && typeof item.w === "number" && typeof item.h === "number" && item.w >= 10 && item.h >= 10 && item.w <= 80 && item.h <= 80
+      ).map((item) => ({ id: item.id, name: typeof item.name === "string" ? item.name : `${item.w}×${item.h} mm`, w: item.w, h: item.h }));
     } catch {
       customSizesList = [];
     }
@@ -699,8 +699,13 @@
   function saveCustomSizes() {
     try {
       localStorage.setItem(STORAGE.customSizes, JSON.stringify(customSizesList));
+      const read = localStorage.getItem(STORAGE.customSizes);
+      if (!read || JSON.parse(read).length !== customSizesList.length) {
+        return false;
+      }
+      return true;
     } catch {
-      // ignore
+      return false;
     }
   }
 
@@ -723,9 +728,10 @@
     return { w: DEFAULT_PHOTO_MM.w, h: DEFAULT_PHOTO_MM.h };
   }
 
-  function refreshCustomSizeSelect() {
+  /** @param {string} [preselectId] If given, select this option after building (for newly saved size). */
+  function refreshCustomSizeSelect(preselectId) {
     if (!customSizeSelect) return;
-    const currentId = customSizeSelect.value;
+    const currentId = preselectId || customSizeSelect.value;
     customSizeSelect.innerHTML = "";
     const opt0 = document.createElement("option");
     opt0.value = "";
@@ -737,7 +743,8 @@
       opt.textContent = `${s.name || `${s.w}×${s.h} mm`} (${s.w}×${s.h})`;
       customSizeSelect.appendChild(opt);
     }
-    if (currentId && customSizesList.some((s) => s.id === currentId)) customSizeSelect.value = currentId;
+    const idToUse = currentId && customSizesList.some((s) => s.id === currentId) ? currentId : "";
+    customSizeSelect.value = idToUse;
   }
 
   function updateCustomSizePanelVisibility() {
@@ -1343,9 +1350,8 @@
         const id = "cs_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
         const entry = { id, name, w: Math.round(w), h: Math.round(h) };
         customSizesList.push(entry);
-        saveCustomSizes();
-        refreshCustomSizeSelect();
-        customSizeSelect.value = id;
+        const persisted = saveCustomSizes();
+        refreshCustomSizeSelect(id);
         selectedCustomSizeId = id;
         inlineCustomMm = null;
         try {
@@ -1353,7 +1359,11 @@
         } catch {}
         updateQtyMaxFromPrintSize();
         renderSheetAll();
-        setValidation(`Saved “${name}” (${entry.w}×${entry.h} mm).`, "ok");
+        if (persisted) {
+          setValidation(`Saved “${name}” (${entry.w}×${entry.h} mm). You can choose it from the list anytime.`, "ok");
+        } else {
+          setValidation(`“${name}” (${entry.w}×${entry.h} mm) is in use for this session. Enable storage to keep after refresh.`, "warn");
+        }
       });
     }
 
