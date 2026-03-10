@@ -57,6 +57,7 @@
   const customH = /** @type {HTMLInputElement} */ ($("customH"));
   const customName = /** @type {HTMLInputElement} */ ($("customName"));
   const btnSaveCustomSize = /** @type {HTMLButtonElement} */ ($("btnSaveCustomSize"));
+  const customSizeSaveFeedback = $("customSizeSaveFeedback");
 
   const workCanvas = /** @type {HTMLCanvasElement} */ ($("workCanvas"));
   const maskCanvas = /** @type {HTMLCanvasElement} */ ($("maskCanvas"));
@@ -1338,17 +1339,29 @@
     if (customW) customW.addEventListener("input", () => { applyInlineCustomFromInputs(); updateQtyMaxFromPrintSize(); renderSheetAll(); });
     if (customH) customH.addEventListener("input", () => { applyInlineCustomFromInputs(); updateQtyMaxFromPrintSize(); renderSheetAll(); });
 
-    if (btnSaveCustomSize) {
-      btnSaveCustomSize.addEventListener("click", () => {
-        const w = Number(customW?.value);
-        const h = Number(customH?.value);
-        const name = (customName?.value || "").trim().slice(0, 40) || `${w}×${h}`;
+    function setCustomSizeFeedback(text, kind) {
+      if (!customSizeSaveFeedback) return;
+      customSizeSaveFeedback.textContent = text || "";
+      customSizeSaveFeedback.className = "customSizeSaveFeedback" + (kind === "ok" ? " saved" : kind === "err" ? " err" : "");
+    }
+
+    function onSaveCustomSizeClick(e) {
+      e.preventDefault();
+      setCustomSizeFeedback("", "");
+        const rawW = (customW && customW.value !== undefined) ? customW.value : "";
+        const rawH = (customH && customH.value !== undefined) ? customH.value : "";
+        const w = rawW === "" ? NaN : Number(rawW);
+        const h = rawH === "" ? NaN : Number(rawH);
         if (!Number.isFinite(w) || !Number.isFinite(h) || w < 10 || w > 80 || h < 10 || h > 80) {
+          setCustomSizeFeedback("أدخل الطول والعرض بين 10 و 80 mm", "err");
           setValidation("Enter width and height between 10 and 80 mm.", "warn");
           return;
         }
+        const rw = Math.round(w);
+        const rh = Math.round(h);
+        const name = (customName?.value || "").trim().slice(0, 40) || `${rw}×${rh}`;
         const id = "cs_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
-        const entry = { id, name, w: Math.round(w), h: Math.round(h) };
+        const entry = { id, name, w: rw, h: rh };
         customSizesList.push(entry);
         const persisted = saveCustomSizes();
         refreshCustomSizeSelect(id);
@@ -1359,12 +1372,17 @@
         } catch {}
         updateQtyMaxFromPrintSize();
         renderSheetAll();
+        setCustomSizeFeedback(persisted ? "تم الحفظ ✓ " + name + " (" + rw + "×" + rh + ")" : "مستخدم لهذه الجلسة فقط", persisted ? "ok" : "err");
         if (persisted) {
-          setValidation(`Saved “${name}” (${entry.w}×${entry.h} mm). You can choose it from the list anytime.`, "ok");
+          setValidation(`Saved “${name}” (${rw}×${rh} mm). You can choose it from the list anytime.`, "ok");
         } else {
-          setValidation(`“${name}” (${entry.w}×${entry.h} mm) is in use for this session. Enable storage to keep after refresh.`, "warn");
+          setValidation(`“${name}” (${rw}×${rh} mm) is in use for this session. Enable storage to keep after refresh.`, "warn");
         }
-      });
+    }
+
+    const saveBtn = document.getElementById("btnSaveCustomSize");
+    if (saveBtn) {
+      saveBtn.addEventListener("click", onSaveCustomSizeClick);
     }
 
     if (qtyInput) {

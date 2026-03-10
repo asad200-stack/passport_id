@@ -171,6 +171,9 @@ body{
 .customSizePanel[hidden]{display:none}
 .newCustomSizeRow{display:flex; flex-direction:column; gap:8px;}
 .input--num{min-width:80px; max-width:100px;}
+.customSizeSaveFeedback{font-size:12px; color:var(--muted); margin-left:8px;}
+.customSizeSaveFeedback.saved{color:var(--accent2); font-weight:600;}
+.customSizeSaveFeedback.err{color:var(--danger);}
 .colorOpts{display:flex; gap:14px; align-items:center;}
 .colorOpt{display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; color:var(--text)}
 .colorOpt input{accent-color:var(--accent)}
