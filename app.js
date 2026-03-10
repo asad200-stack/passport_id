@@ -690,7 +690,7 @@
       }
       customSizesList = parsed.filter(
         (item) =>
-          item && typeof item.id === "string" && typeof item.w === "number" && typeof item.h === "number" && item.w >= 10 && item.h >= 10 && item.w <= 80 && item.h <= 80
+          item && typeof item.id === "string" && typeof item.w === "number" && typeof item.h === "number" && item.w >= 4 && item.h >= 4 && item.w <= 80 && item.h <= 80
       ).map((item) => ({ id: item.id, name: typeof item.name === "string" ? item.name : `${item.w}×${item.h} mm`, w: item.w, h: item.h }));
     } catch {
       customSizesList = [];
@@ -721,7 +721,7 @@
     }
     const w = Number(customW?.value);
     const h = Number(customH?.value);
-    if (Number.isFinite(w) && Number.isFinite(h) && w >= 10 && h >= 10 && w <= 80 && h <= 80) {
+    if (Number.isFinite(w) && Number.isFinite(h) && w >= 4 && h >= 4 && w <= 80 && h <= 80) {
       return { w: Math.round(w), h: Math.round(h) };
     }
     if (inlineCustomMm) return inlineCustomMm;
@@ -1330,7 +1330,7 @@
     function applyInlineCustomFromInputs() {
       const w = Number(customW?.value);
       const h = Number(customH?.value);
-      if (Number.isFinite(w) && Number.isFinite(h) && w >= 10 && w <= 80 && h >= 10 && h <= 80) {
+      if (Number.isFinite(w) && Number.isFinite(h) && w >= 4 && w <= 80 && h >= 4 && h <= 80) {
         inlineCustomMm = { w: Math.round(w), h: Math.round(h) };
       } else {
         inlineCustomMm = null;
@@ -1352,9 +1352,9 @@
         const rawH = (customH && customH.value !== undefined) ? customH.value : "";
         const w = rawW === "" ? NaN : Number(rawW);
         const h = rawH === "" ? NaN : Number(rawH);
-        if (!Number.isFinite(w) || !Number.isFinite(h) || w < 10 || w > 80 || h < 10 || h > 80) {
-          setCustomSizeFeedback("أدخل الطول والعرض بين 10 و 80 mm", "err");
-          setValidation("Enter width and height between 10 and 80 mm.", "warn");
+        if (!Number.isFinite(w) || !Number.isFinite(h) || w < 4 || w > 80 || h < 4 || h > 80) {
+          setCustomSizeFeedback("الطول والعرض بين 4 و 80 mm", "err");
+          setValidation("Enter width and height between 4 and 80 mm.", "warn");
           return;
         }
         const rw = Math.round(w);
