@@ -97,6 +97,7 @@
   const STORAGE = {
     removebgKey: "passport_removebg_key",
     rawPhoto: "passport_raw_photo_v1",
+    rawPhotoSize: "passport_raw_photo_size",
     bgColor: "passport_bg_color",
     customSizes: "passport_custom_sizes",
     printSizeMode: "passport_print_size_mode",
@@ -195,20 +196,32 @@
         });
       }
 
-      rawPhotoCanvas.width = PHOTO_PX.w;
-      rawPhotoCanvas.height = PHOTO_PX.h;
-      const rctx = rawPhotoCanvas.getContext("2d", { willReadFrequently: true });
-      rctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
-      rctx.drawImage(img, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
+      let outW = PHOTO_PX.w;
+      let outH = PHOTO_PX.h;
+      const sizeStr = sessionStorage.getItem(STORAGE.rawPhotoSize);
+      if (sizeStr) {
+        const parts = sizeStr.split(",").map(Number);
+        if (parts.length === 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1]) && parts[0] > 0 && parts[1] > 0) {
+          outW = Math.round(parts[0]);
+          outH = Math.round(parts[1]);
+        }
+      }
 
-      photoCanvas.width = PHOTO_PX.w;
-      photoCanvas.height = PHOTO_PX.h;
+      rawPhotoCanvas.width = outW;
+      rawPhotoCanvas.height = outH;
+      const rctx = rawPhotoCanvas.getContext("2d", { willReadFrequently: true });
+      rctx.clearRect(0, 0, outW, outH);
+      rctx.drawImage(img, 0, 0, outW, outH);
+
+      photoCanvas.width = outW;
+      photoCanvas.height = outH;
       const pctx = photoCanvas.getContext("2d", { willReadFrequently: true });
-      pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+      pctx.clearRect(0, 0, outW, outH);
       pctx.drawImage(rawPhotoCanvas, 0, 0);
 
       hasRawPhoto = true;
-      photoMeta.textContent = `${PHOTO_MM.w}×${PHOTO_MM.h}mm • ${PHOTO_PX.w}×${PHOTO_PX.h}px @ ${PHOTO_DPI}DPI`;
+      const eff = getEffectivePrintSize();
+      photoMeta.textContent = `${eff.w}×${eff.h}mm • ${outW}×${outH}px @ ${PHOTO_DPI}DPI`;
       updateApplyBgUi();
       return true;
     } catch {
@@ -302,13 +315,14 @@
     try {
       setValidation("Applying Studio background (remove.bg)…", "info");
       const out = await removeBackgroundStudioRemoveBg(rawPhotoCanvas, bgHex);
-      pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+      const w = photoCanvas.width;
+      const h = photoCanvas.height;
+      pctx.clearRect(0, 0, w, h);
       pctx.fillStyle = "#" + bgHex;
-      pctx.fillRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+      pctx.fillRect(0, 0, w, h);
       pctx.drawImage(out, 0, 0);
 
-      // Subtle final adjustments (safe)
-      applySubtleEnhancements(pctx, PHOTO_PX.w, PHOTO_PX.h);
+      applySubtleEnhancements(pctx, w, h);
       afterProcessSuccess({ note: "Studio background applied." });
     } catch (e) {
       const msg = String(e?.message || e || "Unknown error");
@@ -765,30 +779,31 @@
     }
   }
 
-  function computeCropRectFromFace(normFaceBox, srcW, srcH) {
-    // Estimate crop height based on face box (bbox is roughly face region).
-    // For passport photos, face region should occupy ~55% of photo height (heuristic).
-    const desiredFaceFrac = 0.55;
+  /**
+   * @param {object} normFaceBox
+   * @param {number} srcW
+   * @param {number} srcH
+   * @param {number} [aspectRatio] width/height of crop (default 35/45)
+   */
+  function computeCropRectFromFace(normFaceBox, srcW, srcH, aspectRatio) {
+    const ar = typeof aspectRatio === "number" && aspectRatio > 0 ? aspectRatio : PHOTO_AR;
+    // Slightly looser crop so shoulders/context fit (face ~50% of height).
+    const desiredFaceFrac = 0.50;
     let cropH = (normFaceBox.height * srcH) / desiredFaceFrac;
     cropH = clamp(cropH, srcH * 0.45, srcH * 0.98);
-    let cropW = cropH * PHOTO_AR;
+    let cropW = cropH * ar;
     if (cropW > srcW) {
       cropW = srcW;
-      cropH = cropW / PHOTO_AR;
+      cropH = cropW / ar;
     }
 
     const cx = normFaceBox.xCenter * srcW;
     const cy = normFaceBox.yCenter * srcH;
-
-    // Shift up slightly so chin isn't too low
     const cyShifted = cy - cropH * 0.08;
-
     let sx = cx - cropW / 2;
     let sy = cyShifted - cropH / 2;
-
     sx = clamp(sx, 0, srcW - cropW);
     sy = clamp(sy, 0, srcH - cropH);
-
     return { sx, sy, sw: cropW, sh: cropH };
   }
 
@@ -948,31 +963,34 @@
       return;
     }
 
-    const crop = computeCropRectFromFace(bb, srcW, srcH);
+    const effective = getEffectivePrintSize();
+    const cropAr = effective.w / effective.h;
+    const crop = computeCropRectFromFace(bb, srcW, srcH, cropAr);
 
-    // Build RAW crop
-    rawPhotoCanvas.width = PHOTO_PX.w;
-    rawPhotoCanvas.height = PHOTO_PX.h;
+    const outPxW = pxFromMm(effective.w, PHOTO_DPI);
+    const outPxH = pxFromMm(effective.h, PHOTO_DPI);
+
+    rawPhotoCanvas.width = outPxW;
+    rawPhotoCanvas.height = outPxH;
     const rctx = rawPhotoCanvas.getContext("2d", { willReadFrequently: true });
     rctx.imageSmoothingEnabled = true;
     rctx.imageSmoothingQuality = "high";
-    rctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
-    rctx.drawImage(srcCanvas, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, PHOTO_PX.w, PHOTO_PX.h);
+    rctx.clearRect(0, 0, outPxW, outPxH);
+    rctx.drawImage(srcCanvas, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, outPxW, outPxH);
 
-    // Copy RAW into visible photo canvas
-    photoCanvas.width = PHOTO_PX.w;
-    photoCanvas.height = PHOTO_PX.h;
+    photoCanvas.width = outPxW;
+    photoCanvas.height = outPxH;
     const pctx = photoCanvas.getContext("2d", { willReadFrequently: true });
-    pctx.clearRect(0, 0, PHOTO_PX.w, PHOTO_PX.h);
+    pctx.clearRect(0, 0, outPxW, outPxH);
     pctx.drawImage(rawPhotoCanvas, 0, 0);
 
     hasRawPhoto = true;
     updateApplyBgUi();
 
-    // Persist RAW in this browser session so Apply Background remains clickable
     try {
       const dataUrl = rawPhotoCanvas.toDataURL("image/jpeg", 0.95);
       sessionStorage.setItem(STORAGE.rawPhoto, dataUrl);
+      sessionStorage.setItem(STORAGE.rawPhotoSize, `${outPxW},${outPxH}`);
     } catch {
       // ignore
     }
@@ -981,7 +999,8 @@
   }
 
   function afterProcessSuccess({ note }) {
-    photoMeta.textContent = `${PHOTO_MM.w}×${PHOTO_MM.h}mm • ${PHOTO_PX.w}×${PHOTO_PX.h}px @ ${PHOTO_DPI}DPI`;
+    const eff = getEffectivePrintSize();
+    photoMeta.textContent = `${eff.w}×${eff.h}mm • ${photoCanvas.width}×${photoCanvas.height}px @ ${PHOTO_DPI}DPI`;
     setValidation(`Done. ${note}`, "ok");
     enable(qtyInput, true);
     enable(btnDownloadJpg, true);
@@ -1200,6 +1219,7 @@
       updateApplyBgUi();
       try {
         sessionStorage.removeItem(STORAGE.rawPhoto);
+        sessionStorage.removeItem(STORAGE.rawPhotoSize);
       } catch {
         // ignore
       }
