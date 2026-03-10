@@ -780,21 +780,24 @@
   }
 
   /**
+   * Always crop a SQUARE (1:1) so we can later fit it into any print size without cutting.
+   * Looser margin so face + shoulders are included.
    * @param {object} normFaceBox
    * @param {number} srcW
    * @param {number} srcH
-   * @param {number} [aspectRatio] width/height of crop (default 35/45)
    */
-  function computeCropRectFromFace(normFaceBox, srcW, srcH, aspectRatio) {
-    const ar = typeof aspectRatio === "number" && aspectRatio > 0 ? aspectRatio : PHOTO_AR;
-    // Slightly looser crop so shoulders/context fit (face ~50% of height).
-    const desiredFaceFrac = 0.50;
+  function computeCropRectFromFace(normFaceBox, srcW, srcH) {
+    const desiredFaceFrac = 0.46;
     let cropH = (normFaceBox.height * srcH) / desiredFaceFrac;
     cropH = clamp(cropH, srcH * 0.45, srcH * 0.98);
-    let cropW = cropH * ar;
+    let cropW = cropH;
     if (cropW > srcW) {
       cropW = srcW;
-      cropH = cropW / ar;
+      cropH = cropW;
+    }
+    if (cropH > srcH) {
+      cropH = srcH;
+      cropW = cropH;
     }
 
     const cx = normFaceBox.xCenter * srcW;
@@ -963,12 +966,12 @@
       return;
     }
 
-    const effective = getEffectivePrintSize();
-    const cropAr = effective.w / effective.h;
-    const crop = computeCropRectFromFace(bb, srcW, srcH, cropAr);
+    const crop = computeCropRectFromFace(bb, srcW, srcH);
 
-    const outPxW = pxFromMm(effective.w, PHOTO_DPI);
-    const outPxH = pxFromMm(effective.h, PHOTO_DPI);
+    // Always store a square "master" image so we can fit it into any print size (35×45, 40×40, etc.) without re-cropping
+    const masterPx = Math.max(PHOTO_PX.w, PHOTO_PX.h);
+    const outPxW = masterPx;
+    const outPxH = masterPx;
 
     rawPhotoCanvas.width = outPxW;
     rawPhotoCanvas.height = outPxH;
@@ -1000,7 +1003,9 @@
 
   function afterProcessSuccess({ note }) {
     const eff = getEffectivePrintSize();
-    photoMeta.textContent = `${eff.w}×${eff.h}mm • ${photoCanvas.width}×${photoCanvas.height}px @ ${PHOTO_DPI}DPI`;
+    const w = photoCanvas.width;
+    const h = photoCanvas.height;
+    photoMeta.textContent = `Print ${eff.w}×${eff.h}mm • Source ${w}×${h}px (fit in frame) @ ${PHOTO_DPI}DPI`;
     setValidation(`Done. ${note}`, "ok");
     enable(qtyInput, true);
     enable(btnDownloadJpg, true);
