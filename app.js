@@ -15,7 +15,9 @@
   const SHEET_DPI = 300;
   const PHOTO_DPI = 450;
   const A4_MM = { w: 210, h: 297 };
-  const PHOTO_MM = { w: 35, h: 45 };
+  /** Default passport size – never changed; used for capture and for "Default" print. */
+  const DEFAULT_PHOTO_MM = { w: 35, h: 45 };
+  const PHOTO_MM = { w: DEFAULT_PHOTO_MM.w, h: DEFAULT_PHOTO_MM.h };
   const PHOTO_AR = PHOTO_MM.w / PHOTO_MM.h; // 35:45
   const SHEET_LAYOUT = {
     maxCols: 5, // user requested: 5 photos per row
@@ -49,6 +51,12 @@
   const qtyInput = /** @type {HTMLInputElement} */ ($("qty"));
   const btnDownloadJpg = /** @type {HTMLButtonElement} */ ($("btnDownloadJpg"));
   const btnDownloadPdf = /** @type {HTMLButtonElement} */ ($("btnDownloadPdf"));
+  const customSizePanel = $("customSizePanel");
+  const customSizeSelect = /** @type {HTMLSelectElement} */ ($("customSizeSelect"));
+  const customW = /** @type {HTMLInputElement} */ ($("customW"));
+  const customH = /** @type {HTMLInputElement} */ ($("customH"));
+  const customName = /** @type {HTMLInputElement} */ ($("customName"));
+  const btnSaveCustomSize = /** @type {HTMLButtonElement} */ ($("btnSaveCustomSize"));
 
   const workCanvas = /** @type {HTMLCanvasElement} */ ($("workCanvas"));
   const maskCanvas = /** @type {HTMLCanvasElement} */ ($("maskCanvas"));
@@ -89,6 +97,9 @@
     removebgKey: "passport_removebg_key",
     rawPhoto: "passport_raw_photo_v1",
     bgColor: "passport_bg_color",
+    customSizes: "passport_custom_sizes",
+    printSizeMode: "passport_print_size_mode",
+    printSizeCustomId: "passport_print_size_custom_id",
   };
 
   // Face detection fallback mode:
@@ -110,6 +121,13 @@
 
   // Track last valid quantity so empty typing doesn't "snap" instantly.
   let lastGoodQty = 12;
+
+  /** @type {{ id: string; name: string; w: number; h: number }[]} */
+  let customSizesList = [];
+  /** When custom mode: selected saved size id, or null if using inline W/H. */
+  let selectedCustomSizeId = null;
+  /** Inline custom W/H (mm) when user types but hasn't saved. */
+  let inlineCustomMm = null;
 
   // --- UI helpers ---
   function setStatus(text, kind = "info") {
@@ -609,19 +627,20 @@
     return Math.max(a, Math.min(b, n));
   }
 
-  function maxQtyForA4() {
-    // Conservative physical fit calculation (in mm).
+  /** Max number of photos that fit on A4 for given photo size in mm. */
+  function maxQtyForA4(photoMm) {
+    const pm = photoMm || PHOTO_MM;
     const usableW = A4_MM.w - 2 * SHEET_LAYOUT.marginMm;
     const usableH = A4_MM.h - 2 * SHEET_LAYOUT.marginMm;
     const cols = Math.max(
       1,
-      Math.min(SHEET_LAYOUT.maxCols, Math.floor((usableW + SHEET_LAYOUT.gapMm) / (PHOTO_MM.w + SHEET_LAYOUT.gapMm))),
+      Math.min(SHEET_LAYOUT.maxCols, Math.floor((usableW + SHEET_LAYOUT.gapMm) / (pm.w + SHEET_LAYOUT.gapMm))),
     );
-    const rows = Math.max(1, Math.floor((usableH + SHEET_LAYOUT.gapMm) / (PHOTO_MM.h + SHEET_LAYOUT.gapMm)));
+    const rows = Math.max(1, Math.floor((usableH + SHEET_LAYOUT.gapMm) / (pm.h + SHEET_LAYOUT.gapMm)));
     return cols * rows;
   }
 
-  const MAX_QTY_A4 = maxQtyForA4(); // typically 30 (5x6) for 35x45 on A4
+  const MAX_QTY_A4 = maxQtyForA4(PHOTO_MM); // typically 30 (5x6) for 35x45 on A4
 
   function parseQtyLenient() {
     const s = String(qtyInput?.value ?? "").trim();
@@ -631,8 +650,12 @@
     return Math.trunc(n);
   }
 
+  function getMaxQtyForCurrentSize() {
+    return maxQtyForA4(getEffectivePrintSize());
+  }
+
   function clampQty(n) {
-    return clamp(n, 1, MAX_QTY_A4);
+    return clamp(n, 1, getMaxQtyForCurrentSize());
   }
 
   function getQtyForRender() {
@@ -649,6 +672,89 @@
     lastGoodQty = q;
     if (qtyInput) qtyInput.value = String(q);
     return q;
+  }
+
+  // --- Custom print sizes ---
+  function loadCustomSizes() {
+    try {
+      const raw = localStorage.getItem(STORAGE.customSizes);
+      if (!raw) {
+        customSizesList = [];
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        customSizesList = [];
+        return;
+      }
+      customSizesList = parsed.filter(
+        (item) =>
+          item && typeof item.id === "string" && typeof item.name === "string" && typeof item.w === "number" && typeof item.h === "number" && item.w >= 10 && item.h >= 10 && item.w <= 80 && item.h <= 80
+      );
+    } catch {
+      customSizesList = [];
+    }
+  }
+
+  function saveCustomSizes() {
+    try {
+      localStorage.setItem(STORAGE.customSizes, JSON.stringify(customSizesList));
+    } catch {
+      // ignore
+    }
+  }
+
+  /** Returns current print size in mm { w, h }. Default size or selected custom. */
+  function getEffectivePrintSize() {
+    const mode = document.querySelector('input[name="printSizeMode"]:checked')?.getAttribute("value");
+    if (mode !== "custom") return { w: DEFAULT_PHOTO_MM.w, h: DEFAULT_PHOTO_MM.h };
+
+    if (selectedCustomSizeId) {
+      const found = customSizesList.find((s) => s.id === selectedCustomSizeId);
+      if (found) return { w: found.w, h: found.h };
+    }
+    const w = Number(customW?.value);
+    const h = Number(customH?.value);
+    if (Number.isFinite(w) && Number.isFinite(h) && w >= 10 && h >= 10 && w <= 80 && h <= 80) {
+      return { w: Math.round(w), h: Math.round(h) };
+    }
+    if (inlineCustomMm) return inlineCustomMm;
+    if (customSizesList.length > 0) return { w: customSizesList[0].w, h: customSizesList[0].h };
+    return { w: DEFAULT_PHOTO_MM.w, h: DEFAULT_PHOTO_MM.h };
+  }
+
+  function refreshCustomSizeSelect() {
+    if (!customSizeSelect) return;
+    const currentId = customSizeSelect.value;
+    customSizeSelect.innerHTML = "";
+    const opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = "— Choose or add new —";
+    customSizeSelect.appendChild(opt0);
+    for (const s of customSizesList) {
+      const opt = document.createElement("option");
+      opt.value = s.id;
+      opt.textContent = `${s.name || `${s.w}×${s.h} mm`} (${s.w}×${s.h})`;
+      customSizeSelect.appendChild(opt);
+    }
+    if (currentId && customSizesList.some((s) => s.id === currentId)) customSizeSelect.value = currentId;
+  }
+
+  function updateCustomSizePanelVisibility() {
+    const mode = document.querySelector('input[name="printSizeMode"]:checked')?.getAttribute("value");
+    if (customSizePanel) customSizePanel.hidden = mode !== "custom";
+  }
+
+  function updateQtyMaxFromPrintSize() {
+    const max = getMaxQtyForCurrentSize();
+    if (qtyInput) {
+      qtyInput.max = String(max);
+      const n = parseQtyLenient();
+      if (n != null && n > max) {
+        qtyInput.value = String(max);
+        lastGoodQty = max;
+      }
+    }
   }
 
   function computeCropRectFromFace(normFaceBox, srcW, srcH) {
@@ -885,7 +991,15 @@
     return { cols, rows };
   }
 
-  function renderSheet(targetCanvas, targetW, targetH, qty) {
+  /**
+   * @param {HTMLCanvasElement} targetCanvas
+   * @param {number} targetW
+   * @param {number} targetH
+   * @param {number} qty
+   * @param {{ w: number; h: number }} [photoMm] Print size in mm (default: PHOTO_MM)
+   */
+  function renderSheet(targetCanvas, targetW, targetH, qty, photoMm) {
+    const pm = photoMm || PHOTO_MM;
     const ctx = targetCanvas.getContext("2d", { willReadFrequently: false });
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
@@ -899,19 +1013,17 @@
     const scaleY = targetH / SHEET_PX.h;
     const scale = Math.min(scaleX, scaleY);
 
-    // Keep real-world sizes correct for A4@300DPI (even if photo crop is rendered at higher DPI).
-    const photoW = PHOTO_SHEET_PX.w * scale;
-    const photoH = PHOTO_SHEET_PX.h * scale;
-    // Tighter layout for paper saving + easier cutting
-    const margin = SHEET_LAYOUT.marginMm * (SHEET_DPI / MM_PER_INCH) * scale; // mm -> px
-
+    // Photo size on sheet in px (at SHEET_DPI scale)
+    const photoSheetPxW = pxFromMm(pm.w, SHEET_DPI);
+    const photoSheetPxH = pxFromMm(pm.h, SHEET_DPI);
+    const photoW = photoSheetPxW * scale;
+    const photoH = photoSheetPxH * scale;
+    const margin = SHEET_LAYOUT.marginMm * (SHEET_DPI / MM_PER_INCH) * scale;
     const { cols, rows } = gridForQty(qty);
-    let gap = SHEET_LAYOUT.gapMm * (SHEET_DPI / MM_PER_INCH) * scale; // mm -> px
+    let gap = SHEET_LAYOUT.gapMm * (SHEET_DPI / MM_PER_INCH) * scale;
 
     let gridW = cols * photoW + (cols - 1) * gap;
     let gridH = rows * photoH + (rows - 1) * gap;
-
-    // If it doesn't fit, tighten the gap.
     const maxW = targetW - margin * 2;
     const maxH = targetH - margin * 2;
     if (gridW > maxW && cols > 1) {
@@ -923,20 +1035,36 @@
       gridH = rows * photoH + (rows - 1) * gap;
     }
 
-    // Start from top-left so remaining paper can be reused.
     const startX = margin;
     const startY = margin;
-
-    // Draw photos (no shadows — cleaner for cutting)
-    ctx.save();
     const stroke = Math.max(1, Math.round(1.2 * scale));
+    const srcW = photoCanvas.width;
+    const srcH = photoCanvas.height;
+
+    ctx.save();
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const i = r * cols + c;
         if (i >= qty) break;
         const x = startX + c * (photoW + gap);
         const y = startY + r * (photoH + gap);
-        ctx.drawImage(photoCanvas, x, y, photoW, photoH);
+        // Draw photo to fill cell (cover): scale to cover, center crop
+        const cellAr = photoW / photoH;
+        const srcAr = srcW / srcH;
+        let drawW = photoW;
+        let drawH = photoH;
+        let drawX = x;
+        let drawY = y;
+        if (srcAr > cellAr) {
+          drawW = photoW;
+          drawH = photoW / srcAr;
+          drawY = y + (photoH - drawH) / 2;
+        } else if (srcAr < cellAr) {
+          drawH = photoH;
+          drawW = photoH * srcAr;
+          drawX = x + (photoW - drawW) / 2;
+        }
+        ctx.drawImage(photoCanvas, 0, 0, srcW, srcH, drawX, drawY, drawW, drawH);
         ctx.lineWidth = stroke;
         ctx.strokeStyle = "rgba(0,0,0,.18)";
         ctx.strokeRect(x, y, photoW, photoH);
@@ -947,15 +1075,15 @@
 
   function renderSheetAll() {
     const qty = getQtyForRender();
-    if (qty == null) return; // don't snap while user is clearing/typing
-    // Full-res render
-    renderSheet(sheetCanvasFull, SHEET_PX.w, SHEET_PX.h, qty);
-    // Preview render
+    if (qty == null) return;
+    const effective = getEffectivePrintSize();
+    const isDefault = effective.w === DEFAULT_PHOTO_MM.w && effective.h === DEFAULT_PHOTO_MM.h;
+    renderSheet(sheetCanvasFull, SHEET_PX.w, SHEET_PX.h, qty, effective);
     const pW = sheetCanvasPreview.width;
     const pH = sheetCanvasPreview.height;
-    renderSheet(sheetCanvasPreview, pW, pH, qty);
-
-    sheetMeta.textContent = `A4 ${A4_MM.w}×${A4_MM.h}mm • ${SHEET_PX.w}×${SHEET_PX.h}px @ ${SHEET_DPI}DPI • Qty ${qty}`;
+    renderSheet(sheetCanvasPreview, pW, pH, qty, effective);
+    const sizeLabel = isDefault ? "35×45 mm" : `Custom ${effective.w}×${effective.h} mm`;
+    sheetMeta.textContent = `A4 ${A4_MM.w}×${A4_MM.h}mm • Photo ${sizeLabel} • ${SHEET_PX.w}×${SHEET_PX.h}px @ ${SHEET_DPI}DPI • Qty ${qty}`;
   }
 
   // --- Download helpers ---
@@ -988,7 +1116,7 @@
 
   // --- Wire up events ---
   async function boot() {
-    // Restore saved settings (API key + background color)
+    // Restore saved settings (API key + background color + print size)
     try {
       const savedKey = localStorage.getItem(STORAGE.removebgKey);
       if (savedKey && removebgKey) removebgKey.value = savedKey;
@@ -998,9 +1126,22 @@
         const radio = document.querySelector(`input[name="bgColor"][value="${savedBgColor}"]`);
         if (radio) radio.checked = true;
       }
+
+      loadCustomSizes();
+      const savedMode = localStorage.getItem(STORAGE.printSizeMode);
+      if (savedMode === "custom") {
+        const radio = document.querySelector('input[name="printSizeMode"][value="custom"]');
+        if (radio) radio.checked = true;
+        const savedId = localStorage.getItem(STORAGE.printSizeCustomId);
+        if (savedId && customSizesList.some((s) => s.id === savedId)) selectedCustomSizeId = savedId;
+      }
     } catch {
       // ignore
     }
+    refreshCustomSizeSelect();
+    if (selectedCustomSizeId && customSizeSelect) customSizeSelect.value = selectedCustomSizeId;
+    updateCustomSizePanelVisibility();
+    updateQtyMaxFromPrintSize();
     updateApplyBgUi();
 
     setStatus("Ready", "info");
@@ -1015,10 +1156,8 @@
     sctx.fillStyle = "#ffffff";
     sctx.fillRect(0, 0, sheetCanvasPreview.width, sheetCanvasPreview.height);
 
-    // Quantity input constraints (A4 capacity)
     if (qtyInput) {
       qtyInput.min = "1";
-      qtyInput.max = String(MAX_QTY_A4);
       if (!String(qtyInput.value || "").trim()) qtyInput.value = String(lastGoodQty);
     }
 
@@ -1155,6 +1294,68 @@
         setValidation(`Camera switch error: ${e?.message || ""}`.trim(), "bad");
       }
     });
+
+    document.querySelectorAll('input[name="printSizeMode"]').forEach((radio) => {
+      radio.addEventListener("change", () => {
+        updateCustomSizePanelVisibility();
+        try {
+          localStorage.setItem(STORAGE.printSizeMode, document.querySelector('input[name="printSizeMode"]:checked')?.getAttribute("value") || "default");
+        } catch {}
+        updateQtyMaxFromPrintSize();
+        renderSheetAll();
+      });
+    });
+
+    if (customSizeSelect) {
+      customSizeSelect.addEventListener("change", () => {
+        const v = customSizeSelect.value;
+        selectedCustomSizeId = v || null;
+        inlineCustomMm = null;
+        try {
+          localStorage.setItem(STORAGE.printSizeCustomId, v || "");
+        } catch {}
+        updateQtyMaxFromPrintSize();
+        renderSheetAll();
+      });
+    }
+
+    function applyInlineCustomFromInputs() {
+      const w = Number(customW?.value);
+      const h = Number(customH?.value);
+      if (Number.isFinite(w) && Number.isFinite(h) && w >= 10 && w <= 80 && h >= 10 && h <= 80) {
+        inlineCustomMm = { w: Math.round(w), h: Math.round(h) };
+      } else {
+        inlineCustomMm = null;
+      }
+    }
+    if (customW) customW.addEventListener("input", () => { applyInlineCustomFromInputs(); updateQtyMaxFromPrintSize(); renderSheetAll(); });
+    if (customH) customH.addEventListener("input", () => { applyInlineCustomFromInputs(); updateQtyMaxFromPrintSize(); renderSheetAll(); });
+
+    if (btnSaveCustomSize) {
+      btnSaveCustomSize.addEventListener("click", () => {
+        const w = Number(customW?.value);
+        const h = Number(customH?.value);
+        const name = (customName?.value || "").trim().slice(0, 40) || `${w}×${h}`;
+        if (!Number.isFinite(w) || !Number.isFinite(h) || w < 10 || w > 80 || h < 10 || h > 80) {
+          setValidation("Enter width and height between 10 and 80 mm.", "warn");
+          return;
+        }
+        const id = "cs_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+        const entry = { id, name, w: Math.round(w), h: Math.round(h) };
+        customSizesList.push(entry);
+        saveCustomSizes();
+        refreshCustomSizeSelect();
+        customSizeSelect.value = id;
+        selectedCustomSizeId = id;
+        inlineCustomMm = null;
+        try {
+          localStorage.setItem(STORAGE.printSizeCustomId, id);
+        } catch {}
+        updateQtyMaxFromPrintSize();
+        renderSheetAll();
+        setValidation(`Saved “${name}” (${entry.w}×${entry.h} mm).`, "ok");
+      });
+    }
 
     if (qtyInput) {
       qtyInput.addEventListener("input", () => renderSheetAll());
