@@ -1056,22 +1056,12 @@
         if (i >= qty) break;
         const x = startX + c * (photoW + gap);
         const y = startY + r * (photoH + gap);
-        // Draw photo to fill cell (cover): scale to cover, center crop
-        const cellAr = photoW / photoH;
-        const srcAr = srcW / srcH;
-        let drawW = photoW;
-        let drawH = photoH;
-        let drawX = x;
-        let drawY = y;
-        if (srcAr > cellAr) {
-          drawW = photoW;
-          drawH = photoW / srcAr;
-          drawY = y + (photoH - drawH) / 2;
-        } else if (srcAr < cellAr) {
-          drawH = photoH;
-          drawW = photoH * srcAr;
-          drawX = x + (photoW - drawW) / 2;
-        }
+        // Fit: scale image so the whole photo fits inside the cell, centered (no crop)
+        const fitScale = Math.min(photoW / srcW, photoH / srcH);
+        const drawW = srcW * fitScale;
+        const drawH = srcH * fitScale;
+        const drawX = x + (photoW - drawW) / 2;
+        const drawY = y + (photoH - drawH) / 2;
         ctx.drawImage(photoCanvas, 0, 0, srcW, srcH, drawX, drawY, drawW, drawH);
         ctx.lineWidth = stroke;
         ctx.strokeStyle = "rgba(0,0,0,.18)";
