@@ -5,8 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light" />
     <title>AI Passport & ID Photo</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📷</text></svg>" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <header class="topbar">
@@ -119,43 +118,6 @@
 
             <div class="controls controls--tight">
               <div class="controlRow">
-                <label class="label">Print size</label>
-                <div class="sizeModeOpts" role="group" aria-label="Print size mode">
-                  <label class="colorOpt">
-                    <input type="radio" name="printSizeMode" value="default" checked /> Default (35×45 mm)
-                  </label>
-                  <label class="colorOpt">
-                    <input type="radio" name="printSizeMode" value="custom" /> Custom
-                  </label>
-                </div>
-              </div>
-              <div id="customSizePanel" class="customSizePanel" hidden>
-                <div class="controlRow">
-                  <label class="label" for="customSizeSelect">Saved size</label>
-                  <select id="customSizeSelect" class="select">
-                    <option value="">— Choose or add new —</option>
-                  </select>
-                </div>
-                <div id="newCustomSizeRow" class="newCustomSizeRow">
-                  <div class="controlRow">
-                    <label class="label" for="customW">Width (mm)</label>
-                    <input id="customW" class="input input--num" type="number" min="4" max="80" step="1" placeholder="35" />
-                  </div>
-                  <div class="controlRow">
-                    <label class="label" for="customH">Height (mm)</label>
-                    <input id="customH" class="input input--num" type="number" min="4" max="80" step="1" placeholder="45" />
-                  </div>
-                  <div class="controlRow">
-                    <label class="label" for="customName">Save as (optional)</label>
-                    <input id="customName" class="input" type="text" placeholder="e.g. سفارة X" maxlength="40" />
-                  </div>
-                  <div class="controlRow">
-                    <button type="button" id="btnSaveCustomSize" class="btn btn--ghost">Save & use</button>
-                    <span id="customSizeSaveFeedback" class="customSizeSaveFeedback" aria-live="polite"></span>
-                  </div>
-                </div>
-              </div>
-              <div class="controlRow">
                 <label class="label" for="qty">Quantity</label>
                 <input
                   id="qty"
@@ -196,6 +158,6 @@
     <!-- PDF export -->
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
-    <script src="app.js"></script>
+    <script src="./app.js"></script>
   </body>
 </html>
